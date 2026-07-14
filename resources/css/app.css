@@ -1,0 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        @apply bg-solar-bg-light text-slate-800 antialiased font-sans transition-colors duration-300;
+        min-height: 100vh;
+        overflow-x: hidden;
+    }
+
+    body.dark {
+        @apply bg-solar-bg-dark text-slate-100;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        @apply bg-transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        @apply bg-solar-primary/20 rounded-full hover:bg-solar-primary/40 transition-all;
+    }
+
+    .dark ::-webkit-scrollbar-thumb {
+        @apply bg-solar-primary/30 rounded-full hover:bg-solar-primary/50;
+    }
+}
+
+@layer components {
+    /* Glassmorphism card utility */
+    .glass-card {
+        @apply bg-white/70 dark:bg-solar-primary-dark/40 backdrop-blur-solar border border-white/20 dark:border-white/5 shadow-solar rounded-2xl transition-all duration-300;
+    }
+
+    .glass-card-hover {
+        @apply glass-card hover:shadow-solar-lg hover:border-solar-primary/20 hover:-translate-y-1;
+    }
+
+    /* Glowing decorative backgrounds */
+    .glow-purple {
+        background: radial-gradient(circle, rgba(108, 59, 255, 0.15) 0%, rgba(138, 91, 255, 0) 70%);
+    }
+
+    .dark .glow-purple {
+        background: radial-gradient(circle, rgba(108, 59, 255, 0.25) 0%, rgba(43, 20, 90, 0) 75%);
+    }
+
+    .glow-cyan {
+        background: radial-gradient(circle, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0) 70%);
+    }
+
+    /* Primary glowing button */
+    .btn-glow {
+        @apply relative overflow-hidden transition-all duration-300 active:scale-95;
+    }
+
+    .btn-glow::after {
+        content: '';
+        @apply absolute inset-0 opacity-0 transition-opacity duration-300 rounded-lg shadow-solar-glow;
+    }
+
+    .btn-glow:hover::after {
+        @apply opacity-100;
+    }
+
+    /* Pulse/glow items */
+    .pulse-glow {
+        @apply shadow-solar-glow animate-pulse-slow;
+    }
+}
+
+/* Scroll Reveal Animations */
+.reveal-hidden {
+    opacity: 0;
+    transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1), transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, opacity;
+}
+
+.reveal-fade-up {
+    transform: translateY(40px);
+}
+
+.reveal-fade-down {
+    transform: translateY(-40px);
+}
+
+.reveal-fade-left {
+    transform: translateX(40px);
+}
+
+.reveal-fade-right {
+    transform: translateX(-40px);
+}
+
+.reveal-zoom-in {
+    transform: scale(0.92);
+}
+
+.reveal-visible {
+    opacity: 1 !important;
+    transform: translate(0) scale(1) !important;
+}
