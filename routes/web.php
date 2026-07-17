@@ -1,10 +1,17 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\SolarApplianceController;
+use App\Http\Controllers\MapController;
+use App\Http\Controllers\MaintenanceRequestController;
+use App\Http\Controllers\TechnicianMaintenanceController;
+use App\Http\Controllers\ProcurementController;
+use App\Http\Controllers\VendorProcurementController;
+use App\Http\Controllers\ServiceNotificationController;
 use App\Models\Faq;
 use App\Models\PricingPlan;
 use App\Models\Product;
@@ -19,6 +26,25 @@ use App\Models\Booking;
 // Public Marketing Pages
 Route::get('/', function () {
     return Inertia::render('Public/Landing');
+})->name('home');
+
+// Session-isolated dashboard previews for side-by-side testing
+Route::prefix('preview')->group(function () {
+    Route::get('/customer', function () {
+        return Inertia::render('Customer/Dashboard');
+    })->name('preview.customer');
+
+    Route::get('/technician', function () {
+        return Inertia::render('Technician/Dashboard');
+    })->name('preview.technician');
+
+    Route::get('/vendor', function () {
+        return Inertia::render('Vendor/Dashboard');
+    })->name('preview.vendor');
+
+    Route::get('/admin', function () {
+        return Inertia::render('Admin/Dashboard');
+    })->name('preview.admin');
 });
 
 Route::get('/features', function () {
@@ -27,7 +53,9 @@ Route::get('/features', function () {
 
 Route::get('/pricing', function () {
     return Inertia::render('Public/Pricing', [
-        'pricingPlans' => PricingPlan::all()
+        'pricingPlans' => Cache::remember('pricing_plans', 3600, function () {
+            return PricingPlan::all();
+        })
     ]);
 });
 
@@ -37,7 +65,9 @@ Route::get('/about', function () {
 
 Route::get('/faq', function () {
     return Inertia::render('Public/FAQ', [
-        'faqs' => Faq::orderBy('order')->get()
+        'faqs' => Cache::remember('faqs_ordered', 3600, function () {
+            return Faq::orderBy('order')->get();
+        })
     ]);
 });
 
@@ -53,11 +83,14 @@ Route::get('/404', function () {
 Route::middleware(['auth', 'role:customer'])->group(function () {
     Route::get('/user', function () {
         return Inertia::render('Customer/Dashboard');
-    });
+    })->name('user.dashboard');
 
-    Route::get('/user/map', function () {
-        return Inertia::render('Customer/Map');
-    });
+    Route::get('/user/map', [MapController::class, 'index'])->name('map.index');
+
+    // Maintenance request routes
+    Route::get('/user/maintenance', [MaintenanceRequestController::class, 'index'])->name('maintenance.index');
+    Route::post('/user/maintenance', [MaintenanceRequestController::class, 'store'])->name('maintenance.store');
+    Route::post('/user/maintenance/{maintenanceRequest}/pay', [MaintenanceRequestController::class, 'pay'])->name('maintenance.pay');
 
     // Bookings routes
     Route::get('/user/bookings', [BookingController::class, 'index'])->name('bookings.index');
@@ -237,6 +270,11 @@ Route::middleware(['auth', 'role:customer'])->group(function () {
 
     Route::get('/user/chat', [App\Http\Controllers\ChatController::class, 'index'])->name('chat.index');
 
+    // Procurement (RFQ) routes
+    Route::get('/user/procurement', [ProcurementController::class, 'index'])->name('procurement.index');
+    Route::post('/user/procurement', [ProcurementController::class, 'store'])->name('procurement.store');
+    Route::post('/user/procurement/quotes/{quote}/approve', [ProcurementController::class, 'approveQuote'])->name('procurement.quote.approve');
+
     Route::get('/user/settings', function () {
         return Inertia::render('Customer/Settings');
     });
@@ -246,11 +284,14 @@ Route::middleware(['auth', 'role:customer'])->group(function () {
 Route::middleware(['auth', 'role:technician'])->group(function () {
     Route::get('/technician', function () {
         return Inertia::render('Technician/Dashboard');
-    });
+    })->name('technician.dashboard');
 
     Route::get('/technician/jobs', function () {
         return Inertia::render('Technician/Jobs/Active');
     });
+
+    Route::get('/technician/requests', [TechnicianMaintenanceController::class, 'index'])->name('technician.requests.index');
+    Route::post('/technician/requests/{maintenanceRequest}/status', [TechnicianMaintenanceController::class, 'updateStatus'])->name('technician.requests.status');
 
     Route::get('/technician/calendar', function () {
         return Inertia::render('Technician/Calendar');
@@ -267,7 +308,7 @@ Route::middleware(['auth', 'role:technician'])->group(function () {
 Route::middleware(['auth', 'role:vendor'])->group(function () {
     Route::get('/vendor', function () {
         return Inertia::render('Vendor/Dashboard');
-    });
+    })->name('vendor.dashboard');
 
     Route::get('/vendor/products', function () {
         return Inertia::render('Vendor/Products/Index');
@@ -281,6 +322,9 @@ Route::middleware(['auth', 'role:vendor'])->group(function () {
         return Inertia::render('Vendor/Store');
     });
 
+    Route::get('/vendor/rfqs', [VendorProcurementController::class, 'index'])->name('vendor.rfqs.index');
+    Route::post('/vendor/rfqs/{procurementRequest}/quote', [VendorProcurementController::class, 'quote'])->name('vendor.rfqs.quote');
+
     Route::get('/vendor/chat', [App\Http\Controllers\ChatController::class, 'index'])->name('vendor.chat.index');
 });
 
@@ -288,26 +332,170 @@ Route::middleware(['auth', 'role:vendor'])->group(function () {
 Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/admin', function () {
         return Inertia::render('Admin/Dashboard');
-    });
+    })->name('admin.dashboard');
 
     Route::get('/admin/users', function () {
-        return Inertia::render('Admin/Users/Index');
+        $users = \App\Models\User::select('id', 'name', 'email', 'role', 'avatar', 'created_at')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($user) {
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role ?? 'customer',
+                    'status' => 'active',
+                    'registered' => $user->created_at->format('M d, Y'),
+                    'avatar' => $user->avatar ?? 'https://ui-avatars.com/api/?name=' . urlencode($user->name) . '&background=0ea5e9&color=fff',
+                ];
+            });
+
+        return Inertia::render('Admin/Users/Index', [
+            'users' => $users,
+        ]);
+    });
+
+    Route::delete('/admin/users/{user}', function (\App\Models\User $user) {
+        $user->delete();
+        return back()->with('success', 'User deleted successfully.');
     });
 
     Route::get('/admin/technicians', function () {
-        return Inertia::render('Admin/Technicians/Index');
+        $technicians = \App\Models\User::where('role', 'technician')
+            ->with('technicianProfile')
+            ->get()
+            ->map(function ($tech) {
+                $profile = $tech->technicianProfile;
+                return [
+                    'id' => $tech->id,
+                    'name' => $tech->name,
+                    'avatar' => $tech->avatar ?? 'https://ui-avatars.com/api/?name=' . urlencode($tech->name) . '&background=0ea5e9&color=fff',
+                    'license' => $profile->cert_name ?? 'Pending Certification',
+                    'experience' => ($profile->experience ?? 0) . ' Years',
+                    'specialization' => $profile && is_array($profile->skills) ? implode(', ', $profile->skills) : 'General Technician',
+                    'rating' => $profile->rating ?? 0.0,
+                    'completedJobs' => $profile->review_count ?? 0,
+                    'status' => $profile->approval_status ?? 'pending',
+                ];
+            });
+
+        return Inertia::render('Admin/Technicians/Index', [
+            'technicians' => $technicians
+        ]);
+    });
+
+    Route::patch('/admin/technicians/{user}/status', function (\Illuminate\Http\Request $request, \App\Models\User $user) {
+        $request->validate(['status' => 'required|in:verified,pending,suspended']);
+        if ($user->technicianProfile) {
+            $user->technicianProfile->update(['approval_status' => $request->status]);
+        } else {
+            $user->technicianProfile()->create(['approval_status' => $request->status]);
+        }
+        return back()->with('success', 'Technician status updated.');
     });
 
     Route::get('/admin/vendors', function () {
-        return Inertia::render('Admin/Vendors/Index');
+        $vendors = \App\Models\User::where('role', 'vendor')
+            ->with('vendorProfile')
+            ->get()
+            ->map(function ($vendor) {
+                $profile = $vendor->vendorProfile;
+                return [
+                    'id' => $vendor->id,
+                    'name' => $profile->store_name ?? $vendor->name,
+                    'vat' => $profile->vat_number ?? 'N/A',
+                    'headquarters' => $profile->company_address ?? 'N/A',
+                    'email' => $vendor->email,
+                    'joined' => $vendor->created_at ? $vendor->created_at->format('M d, Y') : 'Unknown',
+                    'status' => $profile->approval_status ?? 'pending',
+                ];
+            });
+
+        return Inertia::render('Admin/Vendors/Index', [
+            'vendors' => $vendors
+        ]);
+    });
+
+    Route::patch('/admin/vendors/{user}/status', function (\Illuminate\Http\Request $request, \App\Models\User $user) {
+        $request->validate(['status' => 'required|in:verified,pending,suspended']);
+        if ($user->vendorProfile) {
+            $user->vendorProfile->update(['approval_status' => $request->status]);
+        } else {
+            $user->vendorProfile()->create(['approval_status' => $request->status]);
+        }
+        return back()->with('success', 'Vendor status updated.');
     });
 
     Route::get('/admin/products', function () {
-        return Inertia::render('Admin/Products/Index');
+        $products = \App\Models\Product::with('supplier.user')->get()->map(function ($product) {
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'category' => $product->category,
+                'price' => $product->price,
+                'rating' => $product->rating ?? 0.0,
+                'reviewsCount' => $product->reviews_count ?? 0,
+                'image' => $product->image ?? 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=200&h=200&fit=crop',
+                'description' => $product->description ?? '',
+                'specs' => $product->specs ?? (object)[],
+                'stock' => $product->stock ?? 0,
+                'features' => $product->features ?? [],
+                'vendorName' => $product->supplier ? $product->supplier->user->name : 'Unknown',
+                'submittedDate' => $product->created_at ? $product->created_at->format('M d, Y') : 'Unknown',
+                'approvalStatus' => $product->approval_status ?? 'pending',
+            ];
+        });
+
+        return Inertia::render('Admin/Products/Index', [
+            'products' => $products
+        ]);
+    });
+
+    Route::patch('/admin/products/{product}/status', function (\Illuminate\Http\Request $request, \App\Models\Product $product) {
+        $request->validate(['status' => 'required|in:approved,pending,rejected']);
+        $product->update(['approval_status' => $request->status]);
+        return back()->with('success', 'Product status updated.');
     });
 
     Route::get('/admin/blog', function () {
-        return Inertia::render('Admin/Blog/Index');
+        $posts = \App\Models\BlogPost::orderBy('created_at', 'desc')->get()->map(function ($post) {
+            return [
+                'id' => $post->id,
+                'title' => $post->title,
+                'author' => $post->author,
+                'category' => $post->category,
+                'date' => $post->created_at->format('M d, Y'),
+                'views' => $post->views >= 1000 ? round($post->views / 1000, 1) . 'k' : (string)$post->views,
+                'status' => $post->status,
+                'content' => $post->content,
+            ];
+        });
+        return Inertia::render('Admin/Blog/Index', [
+            'blogPosts' => $posts
+        ]);
+    });
+
+    Route::post('/admin/blog', function (\Illuminate\Http\Request $request) {
+        $data = $request->validate([
+            'title' => 'required|string',
+            'author' => 'required|string',
+            'category' => 'required|string',
+            'content' => 'required|string',
+            'status' => 'required|in:published,draft'
+        ]);
+        \App\Models\BlogPost::create($data);
+        return back()->with('success', 'Blog post created.');
+    });
+
+    Route::patch('/admin/blog/{post}/status', function (\Illuminate\Http\Request $request, \App\Models\BlogPost $post) {
+        $request->validate(['status' => 'required|in:published,draft']);
+        $post->update(['status' => $request->status]);
+        return back()->with('success', 'Blog post status updated.');
+    });
+
+    Route::delete('/admin/blog/{post}', function (\App\Models\BlogPost $post) {
+        $post->delete();
+        return back()->with('success', 'Blog post deleted.');
     });
 
     Route::get('/admin/settings', function () {
@@ -324,10 +512,17 @@ Route::middleware('auth')->group(function () {
     Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])->name('profile.avatar.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
+    // Notification actions
+    Route::post('/notifications/{notification}/read', [ServiceNotificationController::class, 'markRead'])->name('notifications.read');
+
     // Chat API routes
+    Route::get('/api/users/search', [App\Http\Controllers\ChatController::class, 'searchUsers']);
+    Route::post('/api/conversations', [App\Http\Controllers\ChatController::class, 'store']);
     Route::get('/api/conversations/{conversation}/messages', [App\Http\Controllers\ChatController::class, 'getMessages']);
     Route::post('/api/conversations/{conversation}/messages', [App\Http\Controllers\ChatController::class, 'storeMessage']);
     Route::post('/api/conversations/{conversation}/conclude', [App\Http\Controllers\ChatController::class, 'conclude']);
+    Route::post('/api/conversations/{conversation}/members', [App\Http\Controllers\ChatController::class, 'addMembers']);
+    Route::delete('/api/conversations/{conversation}/members/{user}', [App\Http\Controllers\ChatController::class, 'removeMember']);
     Route::delete('/api/conversations/{conversation}', [App\Http\Controllers\ChatController::class, 'destroy']);
 });
 

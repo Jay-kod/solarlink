@@ -18,6 +18,7 @@ class TechnicianProfile extends Model
         'distance',
         'skills',
         'status',
+        'approval_status',
         'lat',
         'lng',
         'eta',
@@ -33,5 +34,10 @@ class TechnicianProfile extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function maintenanceRequests()
+    {
+        return $this->hasMany(MaintenanceRequest::class);
     }
 }

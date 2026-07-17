@@ -14,19 +14,19 @@ interface UserItem {
     avatar: string;
 }
 
-const systemUsers = ref<UserItem[]>([
-    { id: 201, name: 'Alice Johnson', email: 'alice.johnson@gmail.com', role: 'customer', status: 'active', registered: 'May 20, 2026', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=150' },
-    { id: 202, name: 'Timothy Vance', email: 'tim.vance@gmail.com', role: 'customer', status: 'active', registered: 'May 18, 2026', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150' },
-    { id: 203, name: 'Clara Oswald', email: 'clara.oswald@gmail.com', role: 'customer', status: 'blocked', registered: 'May 15, 2026', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150' },
-    { id: 204, name: 'Marcus Vance', email: 'marcus.vance@solarlink.io', role: 'technician', status: 'active', registered: 'May 10, 2026', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150' },
-    { id: 205, name: 'Sarah Jenkins', email: 'sarah.jenkins@gmail.com', role: 'technician', status: 'active', registered: 'May 12, 2026', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=150' },
-    { id: 206, name: 'EcoGrid Logistics', email: 'logistics@ecogrid-direct.com', role: 'vendor', status: 'active', registered: 'May 05, 2026', avatar: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=150' },
-    { id: 207, name: 'Alex Thompson', email: 'alex.thompson@solarlink.io', role: 'admin', status: 'active', registered: 'Jan 01, 2026', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150' },
-    { id: 208, name: 'Grace Hopper', email: 'grace.hopper@gmail.com', role: 'customer', status: 'active', registered: 'May 22, 2026', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150' }
-])
+const props = defineProps<{
+    users?: UserItem[];
+}>()
+
+const systemUsers = ref<UserItem[]>(props.users && props.users.length > 0 ? props.users : [])
 
 const searchQuery = ref('')
 const selectedRoleFilter = ref<string>('all')
+
+import { useAlert } from '@/composables/useAlert'
+import { router } from '@inertiajs/vue3'
+
+const { confirmAlert } = useAlert()
 
 const toggleUserStatus = (id: number) => {
     const user = systemUsers.value.find(u => u.id === id)
@@ -35,9 +35,18 @@ const toggleUserStatus = (id: number) => {
     }
 }
 
-const handleDeleteUser = (id: number) => {
-    if (confirm('Are you sure you want to delete this user registration?')) {
-        systemUsers.value = systemUsers.value.filter(u => u.id !== id)
+const handleDeleteUser = async (id: number) => {
+    const confirmed = await confirmAlert(
+        'Are you sure you want to delete this user registration?',
+        'Confirm Deletion',
+        { type: 'danger', confirmText: 'Delete User' }
+    )
+    if (confirmed) {
+        router.delete(`/admin/users/${id}`, {
+            onSuccess: () => {
+                systemUsers.value = systemUsers.value.filter(u => u.id !== id)
+            }
+        })
     }
 }
 

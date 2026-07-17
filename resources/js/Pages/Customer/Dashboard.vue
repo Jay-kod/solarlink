@@ -5,7 +5,7 @@ import CustomerLayout from '@/Layouts/CustomerLayout.vue'
 import AnalyticsCard from '@/Components/Cards/AnalyticsCard.vue'
 import AreaChart from '@/Components/Charts/AreaChart.vue'
 import DonutChart from '@/Components/Charts/DonutChart.vue'
-import { mockTechnicians } from '@/data/technicians'
+import { technicianDirectory } from '@/data/technicians'
 import { 
     Cpu, Zap, Battery, DollarSign, Leaf, Wrench, Calendar, 
     ArrowRight, Bell, Sparkles, AlertCircle 
@@ -194,7 +194,7 @@ const batteryLabels = ['Direct Home Load', 'Battery Buffer Storage', 'Grid Expor
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div 
-                                v-for="tech in mockTechnicians.slice(0, 2)" 
+                                v-for="tech in technicianDirectory.slice(0, 2)" 
                                 :key="tech.id"
                                 class="p-4 rounded-2xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-100 dark:border-white/5 flex flex-col gap-3"
                             >

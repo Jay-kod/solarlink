@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import PublicLayout from '@/Layouts/PublicLayout.vue'
-import { mockProducts } from '@/data/products'
+import { productCatalog } from '@/data/products'
 import { 
     Zap, Cpu, ShieldCheck, HeartHandshake, CheckCircle2, ChevronDown, 
     ArrowRight, Star, ShoppingBag, ShieldAlert, Sparkles 
@@ -84,7 +84,7 @@ const toggleFaq = (index: number) => {
     faqItems.value[index].open = !faqItems.value[index].open
 }
 
-const featuredProducts = mockProducts.slice(0, 3)
+const featuredProducts = productCatalog.slice(0, 3)
 
 const page = usePage()
 const authUser = computed(() => {

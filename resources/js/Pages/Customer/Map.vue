@@ -1,21 +1,35 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { Head, useForm } from '@inertiajs/vue3'
+import { computed, ref, watch } from 'vue'
+import { Head, router, useForm } from '@inertiajs/vue3'
 import CustomerLayout from '@/Layouts/CustomerLayout.vue'
-import MapPlaceholder from '@/Components/Map/MapPlaceholder.vue'
-import { Technician } from '@/data/technicians'
-import { Wrench, ShieldCheck, MapPin, Sparkles, Calendar, Clock, FileText, CheckCircle } from 'lucide-vue-next'
+import MapPlaceholder, { type MapTechnician } from '@/Components/Map/MapPlaceholder.vue'
+import { Wrench, Sparkles } from 'lucide-vue-next'
 
-const selectedTech = ref<Technician | null>(null)
+const props = defineProps<{
+    technicians: MapTechnician[];
+    search: {
+        lat: number;
+        lng: number;
+        q: string;
+    };
+}>()
+
+const selectedTech = ref<MapTechnician | null>(null)
 const bookingFlowActive = ref(false)
+const filters = ref({
+    lat: props.search.lat,
+    lng: props.search.lng,
+    q: props.search.q,
+})
 
-const handleTechSelect = (tech: Technician) => {
+const sortedTechnicians = computed(() => props.technicians || [])
+
+const handleTechSelect = (tech: MapTechnician) => {
     selectedTech.value = tech
     form.technician_profile_id = tech.id
     form.cost = tech.pricePerHour
 }
 
-// Prefill form for booking
 const form = useForm({
     technician_profile_id: '',
     service_type: 'Solar Panel Maintenance',
@@ -26,7 +40,6 @@ const form = useForm({
     notes: 'Emergency grid array performance diagnostic request.'
 })
 
-// Update form details if technician changes
 watch(selectedTech, (newTech) => {
     if (newTech) {
         form.technician_profile_id = newTech.id
@@ -45,6 +58,24 @@ const handleConfirmBooking = () => {
         }
     })
 }
+
+const applyFilters = () => {
+    router.get('/user/map', filters.value, {
+        preserveState: true,
+        preserveScroll: true,
+    })
+}
+
+const useMyLocation = () => {
+    if (!navigator.geolocation) {
+        return
+    }
+    navigator.geolocation.getCurrentPosition((position) => {
+        filters.value.lat = Number(position.coords.latitude.toFixed(6))
+        filters.value.lng = Number(position.coords.longitude.toFixed(6))
+        applyFilters()
+    })
+}
 </script>
 
 <template>
@@ -59,7 +90,26 @@ const handleConfirmBooking = () => {
                     <span>Live GPS Telemetry Simulation</span>
                 </div>
                 <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Emergency Field Dispatch Map</h2>
-                <p class="text-xs text-slate-400">Click any technician pin on the radar grid below to view dispatch options, check credentials, and request immediate deployment.</p>
+                <p class="text-xs text-slate-400">Technicians are ranked by geodesic distance from your search point. Select a marker to book immediately.</p>
+            </div>
+
+            <div class="glass-card p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                <div>
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Latitude</label>
+                    <input v-model.number="filters.lat" type="number" step="0.000001" class="w-full h-9 mt-1 px-2 rounded-lg border border-slate-200 text-sm" />
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Longitude</label>
+                    <input v-model.number="filters.lng" type="number" step="0.000001" class="w-full h-9 mt-1 px-2 rounded-lg border border-slate-200 text-sm" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Search by name or skill</label>
+                    <input v-model="filters.q" type="text" placeholder="e.g. inverter" class="w-full h-9 mt-1 px-2 rounded-lg border border-slate-200 text-sm" />
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" class="h-9 px-3 rounded-lg border text-xs font-bold" @click="useMyLocation">Use GPS</button>
+                    <button type="button" class="h-9 px-3 rounded-lg bg-solar-primary text-white text-xs font-bold" @click="applyFilters">Apply</button>
+                </div>
             </div>
 
             <!-- Grid container -->
@@ -67,11 +117,28 @@ const handleConfirmBooking = () => {
                 
                 <!-- Map (Left) -->
                 <div class="lg:col-span-8">
-                    <MapPlaceholder @select-tech="handleTechSelect" />
+                    <MapPlaceholder :technicians="sortedTechnicians" @select-tech="handleTechSelect" />
                 </div>
 
                 <!-- Control / Booking details panel (Right) -->
                 <div class="lg:col-span-4 flex flex-col gap-6 relative">
+                    <div class="glass-card p-4">
+                        <h4 class="font-bold text-sm mb-2">Nearest Technicians</h4>
+                        <div class="space-y-2 max-h-52 overflow-auto">
+                            <button
+                                v-for="tech in sortedTechnicians"
+                                :key="tech.id"
+                                type="button"
+                                class="w-full text-left p-2 rounded-lg border border-slate-200 hover:border-solar-primary"
+                                @click="handleTechSelect(tech)"
+                            >
+                                <p class="text-xs font-bold">{{ tech.name }}</p>
+                                <p class="text-[11px] text-slate-500">{{ tech.distance }} | {{ tech.skills.join(', ') }}</p>
+                            </button>
+                            <p v-if="!sortedTechnicians.length" class="text-xs text-slate-500">No technician matches current search.</p>
+                        </div>
+                    </div>
+
                     <!-- Loading overlay -->
                     <div 
                         v-if="bookingFlowActive"
@@ -82,26 +149,6 @@ const handleConfirmBooking = () => {
                             <h3 class="font-extrabold text-sm text-slate-800 dark:text-white">Broadcasting Dispatch...</h3>
                             <p class="text-[10px] text-slate-450 mt-1 uppercase tracking-wider font-bold">Securing engineer GPS slot</p>
                         </div>
-                    </div>
-
-                    <!-- Dispatch instructions -->
-                    <div class="glass-card p-6 flex flex-col gap-4 bg-white dark:bg-solar-bg-dark/40">
-                        <h3 class="font-extrabold text-base text-slate-800 dark:text-white">Dispatch Operations</h3>
-                        <div class="h-px bg-solar-primary/10 dark:bg-white/5 my-1"></div>
-                        <ul class="flex flex-col gap-3.5 text-xs text-slate-500 dark:text-slate-400 leading-normal">
-                            <li class="flex items-start gap-2">
-                                <span class="h-4.5 w-4.5 rounded-full bg-solar-primary-light dark:bg-solar-primary-dark text-solar-primary flex items-center justify-center font-bold text-[10px] shrink-0">1</span>
-                                <span>Hover/click tech coordinates on map grid.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="h-4.5 w-4.5 rounded-full bg-solar-primary-light dark:bg-solar-primary-dark text-solar-primary flex items-center justify-center font-bold text-[10px] shrink-0">2</span>
-                                <span>Configure service categories, schedules, and dispatches.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="h-4.5 w-4.5 rounded-full bg-solar-primary-light dark:bg-solar-primary-dark text-solar-primary flex items-center justify-center font-bold text-[10px] shrink-0">3</span>
-                                <span>Confirm ticket and track engineer arrival.</span>
-                            </li>
-                        </ul>
                     </div>
 
                     <!-- Selected Tech panel actions -->

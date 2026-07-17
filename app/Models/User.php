@@ -101,4 +101,36 @@ class User extends Authenticatable
     {
         return $this->hasMany(Message::class, 'sender_id');
     }
+
+    /**
+     * Maintenance requests created by this user.
+     */
+    public function maintenanceRequests()
+    {
+        return $this->hasMany(MaintenanceRequest::class);
+    }
+
+    /**
+     * Procurement RFQs created by this user.
+     */
+    public function procurementRequests()
+    {
+        return $this->hasMany(ProcurementRequest::class);
+    }
+
+    /**
+     * Supplier profile for vendor users.
+     */
+    public function supplier()
+    {
+        return $this->hasOne(Supplier::class);
+    }
+
+    /**
+     * In-app service notifications.
+     */
+    public function serviceNotifications()
+    {
+        return $this->hasMany(ServiceNotification::class);
+    }
 }

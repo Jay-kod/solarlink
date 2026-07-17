@@ -103,11 +103,15 @@ const activeRole = computed<'customer' | 'technician' | 'vendor' | 'admin'>(() =
 
 const activeConfig = computed(() => roleConfigs[activeRole.value])
 
-// Inertia useForm
+// Dev-only auto-fill — hidden in production builds
+const isDev = import.meta.env.DEV
+
+// Inertia useForm — starts empty for security; demo pre-fill is opt-in via button
 const form = useForm({
-    email: activeConfig.value.email,
-    password: 'password',
-    remember: true,
+    email: '',
+    password: '',
+    role: activeRole.value,
+    remember: false,
 })
 
 const showPassword = ref(false)
@@ -121,13 +125,13 @@ const triggerAutofill = () => {
     }, 1000)
 }
 
-// Watch activeRole to dynamically pre-fill email/password when switching login portals
+// Watch activeRole to keep form.role in sync (credentials are NOT auto-filled)
 watch(activeRole, (newRole) => {
-    form.email = roleConfigs[newRole].email
-    form.password = 'password'
+    form.role = newRole
 })
 
 const handleLoginSubmit = () => {
+    form.role = activeRole.value
     form.post('/login')
 }
 </script>
@@ -135,7 +139,7 @@ const handleLoginSubmit = () => {
 <template>
     <Head :title="`SolarLink — ${activeConfig.title}`" />
 
-    <div class="h-screen relative flex items-center justify-center p-4 sm:p-6 bg-slate-50 dark:bg-solar-bg-dark transition-colors duration-300 overflow-hidden">
+    <div class="relative flex min-h-dvh items-start md:items-center justify-center px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10 bg-slate-50 dark:bg-solar-bg-dark transition-colors duration-300 overflow-x-hidden overflow-y-auto">
         <!-- Background decorative glows tailored to active role -->
         <div 
             class="absolute top-10 left-10 w-96 h-96 rounded-full blur-3xl pointer-events-none -z-10 animate-pulse-slow transition-all duration-700"
@@ -155,15 +159,15 @@ const handleLoginSubmit = () => {
             <Moon v-else class="h-5 w-5" />
         </button>
 
-        <div class="w-full max-w-[1020px] grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch relative z-10">
+        <div class="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-8 items-stretch relative z-10">
             
             <!-- Left Info Panel (Branded visual panel tailored to role) -->
             <div 
-                class="md:col-span-5 flex flex-col justify-between gap-8 p-6 sm:p-8 rounded-3xl glass-card text-left bg-gradient-to-br transition-all duration-700"
+                class="lg:col-span-5 flex flex-col justify-between gap-6 sm:gap-8 p-5 sm:p-8 rounded-2xl md:rounded-3xl glass-card text-left bg-gradient-to-br transition-all duration-700 min-h-[320px] sm:min-h-[380px] lg:min-h-[640px]"
                 :class="activeConfig.cardBg"
             >
                 <div class="flex flex-col gap-6">
-                    <Link href="/" class="flex items-center gap-2 group self-start">
+                    <Link :href="route('home')" class="flex items-center gap-2 group self-start">
                         <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-solar-primary to-solar-primary-accent flex items-center justify-center shadow-solar-glow group-hover:scale-105 transition-transform duration-300">
                             <span class="text-white font-extrabold text-sm">SL</span>
                         </div>
@@ -205,7 +209,7 @@ const handleLoginSubmit = () => {
             </div>
 
             <!-- Right Login Form Panel -->
-            <div class="md:col-span-7 glass-card p-6 sm:p-8 flex flex-col justify-center text-left relative overflow-hidden bg-white/70 dark:bg-solar-primary-dark/5">
+            <div class="lg:col-span-7 glass-card p-5 sm:p-8 flex flex-col justify-start lg:justify-center text-left relative overflow-hidden bg-white/70 dark:bg-solar-primary-dark/5 rounded-2xl md:rounded-3xl">
                 <!-- Login success simulated modal overlay -->
                 <div 
                     v-if="form.processing"
@@ -218,13 +222,19 @@ const handleLoginSubmit = () => {
                     </div>
                 </div>
 
+                <!-- Status message (e.g. after password reset) -->
+                <div v-if="status" class="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm font-semibold text-emerald-600 dark:text-emerald-400 text-center">
+                    {{ status }}
+                </div>
+
                 <div class="flex flex-col gap-2 mb-6">
                     <h3 class="text-2xl font-black text-slate-900 dark:text-white leading-tight tracking-tight">{{ activeConfig.title }}</h3>
                     <p class="text-xs text-slate-450 dark:text-slate-400 font-medium">{{ activeConfig.subtitle }}</p>
                 </div>
 
-                <!-- BEAUTIFUL DEMO AUTOFILL WIDGET -->
+                <!-- DEMO AUTOFILL WIDGET — Only visible in development mode -->
                 <div 
+                    v-if="isDev"
                     @click="triggerAutofill"
                     class="mb-6 p-4 rounded-2xl cursor-pointer border text-left bg-gradient-to-r transition-all duration-300 hover:scale-[1.01] relative overflow-hidden"
                     :class="[
@@ -270,7 +280,7 @@ const handleLoginSubmit = () => {
                     <div class="flex flex-col gap-1.5">
                         <div class="flex justify-between items-center">
                             <label class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Access Token / Password</label>
-                            <span class="text-[10px] font-bold text-solar-primary cursor-pointer hover:underline uppercase tracking-wider">Forgot?</span>
+                            <Link :href="route('password.request')" class="text-[10px] font-bold text-solar-primary cursor-pointer hover:underline uppercase tracking-wider">Forgot?</Link>
                         </div>
                         <div class="relative">
                             <input 
@@ -319,10 +329,10 @@ const handleLoginSubmit = () => {
                     </button>
                 </form>
 
-                <div class="text-center mt-6">
+                <div v-if="activeRole !== 'admin'" class="text-center mt-6">
                     <p class="text-xs text-slate-400 dark:text-slate-500">
                         Don't have an account yet? 
-                        <Link :href="activeRole === 'customer' ? '/user/register' : activeRole === 'technician' ? '/technician/register' : activeRole === 'vendor' ? '/vendor/register' : '/user/register'" class="font-bold text-solar-primary hover:underline">Register Account</Link>
+                        <Link :href="activeRole === 'customer' ? route('user.register') : activeRole === 'technician' ? route('technician.register') : route('vendor.register')" class="font-bold text-solar-primary hover:underline">Register Account</Link>
                     </p>
                 </div>
 
@@ -335,7 +345,7 @@ const handleLoginSubmit = () => {
                         <Link 
                             v-for="(conf, roleKey) in roleConfigs"
                             :key="roleKey"
-                            :href="roleKey === 'customer' ? '/user/login' : `/${roleKey}/login`"
+                            :href="roleKey === 'customer' ? route('user.login') : roleKey === 'technician' ? route('technician.login') : roleKey === 'vendor' ? route('vendor.login') : '/admin/login'"
                             class="p-2.5 rounded-xl border text-center transition-all duration-300 flex flex-col items-center justify-center gap-1 group shadow-sm bg-white/40 hover:bg-white dark:bg-solar-primary-dark/10 dark:hover:bg-solar-primary-dark/30"
                             :class="[
                                 activeRole === roleKey 

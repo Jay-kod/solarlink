@@ -10,6 +10,7 @@ class Product extends Model
     use HasFactory;
 
     protected $fillable = [
+        'supplier_id',
         'name',
         'category',
         'price',
@@ -22,14 +23,22 @@ class Product extends Model
         'stock',
         'features',
         'is_featured',
+        'is_verified',
+        'approval_status',
     ];
 
     protected $casts = [
         'specs' => 'json',
         'features' => 'json',
         'is_featured' => 'boolean',
+        'is_verified' => 'boolean',
         'price' => 'float',
         'original_price' => 'float',
         'rating' => 'float',
     ];
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
+    }
 }

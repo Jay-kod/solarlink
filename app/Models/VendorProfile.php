@@ -14,6 +14,7 @@ class VendorProfile extends Model
         'store_name',
         'company_address',
         'vat_number',
+        'approval_status',
     ];
 
     public function user()

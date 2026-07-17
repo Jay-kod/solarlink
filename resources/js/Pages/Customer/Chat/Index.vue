@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
 import CustomerLayout from '@/Layouts/CustomerLayout.vue'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
@@ -7,7 +7,8 @@ import axios from 'axios'
 import { 
     MessageSquare, Send, Search, Sparkles, Phone, Video, 
     FileText, Image, MapPin, Star, Info, 
-    CornerDownLeft, UserCheck, ShieldCheck, Download, CheckCircle2, Lock
+    CornerDownLeft, UserCheck, ShieldCheck, Download, CheckCircle2, Lock, Plus, X,
+    CheckCheck, Paperclip, Mic
 } from 'lucide-vue-next'
 
 interface Participant {
@@ -21,6 +22,7 @@ interface Conversation {
     id: number;
     title: string;
     status: 'active' | 'concluded';
+    created_by?: number;
     participants: Participant[];
     lastMessage: string;
     time: string;
@@ -58,21 +60,130 @@ const layoutComponent = computed(() => {
     return userRole.value === 'customer' ? CustomerLayout : DashboardLayout
 })
 
+const isCreator = computed(() => {
+    if (!activeConversation.value || !authUser.value) return false
+    return activeConversation.value.created_by === authUser.value.id
+})
+
+const creatorParticipant = computed(() => {
+    if (!activeConversation.value) return null
+    return activeConversation.value.participants.find((p: any) => p.id === activeConversation.value?.created_by) || activeConversation.value.participants[0]
+})
+
 const conversations = ref<Conversation[]>(props.initialConversations || [])
 const activeConversation = ref<Conversation | null>(conversations.value[0] || null)
 const messages = ref<Message[]>([])
 const isTyping = ref(false)
-const showDetails = ref(true)
 const searchQuery = ref('')
 const messageContainer = ref<HTMLElement | null>(null)
 const newMessage = ref('')
+const imageAttachmentInput = ref<HTMLInputElement | null>(null)
+const fileAttachmentInput = ref<HTMLInputElement | null>(null)
 
-const fetchMessages = async () => {
+const isProcessing = ref(false)
+let pollingInterval: number | null = null
+
+// New Chat / Add Member State
+const modalMode = ref<'new' | 'add'>('new')
+const showNewChatModal = ref(false)
+const userSearchQuery = ref('')
+const searchResults = ref<any[]>([])
+const selectedUsers = ref<any[]>([])
+const isSearching = ref(false)
+
+const openNewChat = (mode: 'new' | 'add' = 'new') => {
+    modalMode.value = mode
+    showNewChatModal.value = true
+    userSearchQuery.value = ''
+    searchResults.value = []
+    selectedUsers.value = []
+}
+
+const closeNewChat = () => {
+    showNewChatModal.value = false
+}
+
+let searchTimeout: any = null
+const searchForUsers = () => {
+    if (searchTimeout) clearTimeout(searchTimeout)
+    if (!userSearchQuery.value) {
+        searchResults.value = []
+        return
+    }
+    
+    isSearching.value = true
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await axios.get('/api/users/search', { params: { q: userSearchQuery.value } })
+            searchResults.value = res.data
+        } catch (e) {
+            console.error(e)
+        } finally {
+            isSearching.value = false
+        }
+    }, 500)
+}
+
+const toggleUserSelection = (user: any) => {
+    const idx = selectedUsers.value.findIndex(u => u.id === user.id)
+    if (idx > -1) {
+        selectedUsers.value.splice(idx, 1)
+    } else {
+        selectedUsers.value.push(user)
+    }
+}
+
+const startNewConversation = async () => {
+    if (selectedUsers.value.length === 0) return
+    try {
+        const userIds = selectedUsers.value.map(u => u.id)
+        
+        if (modalMode.value === 'add' && activeConversation.value) {
+            const res = await axios.post(`/api/conversations/${activeConversation.value.id}/members`, { user_ids: userIds })
+            if (res.data.status === 'success') {
+                activeConversation.value.participants = res.data.participants
+                closeNewChat()
+                fetchMessages() // to get the system message
+            } else if (res.data.status === 'info') {
+                closeNewChat()
+            }
+        } else {
+            const res = await axios.post('/api/conversations', { user_ids: userIds })
+            if (res.data.status === 'success') {
+                conversations.value.unshift(res.data.conversation)
+                selectConversation(res.data.conversation)
+                closeNewChat()
+            }
+        }
+    } catch (e) {
+        console.error('Failed to create/update chat:', e)
+        infoAlert('Failed to complete action.', 'Error', { type: 'error' })
+    }
+}
+
+onMounted(() => {
+    pollingInterval = window.setInterval(() => {
+        if (activeConversation.value && !isTyping.value) {
+            fetchMessages(false)
+        }
+    }, 3000)
+})
+
+onBeforeUnmount(() => {
+    if (pollingInterval) {
+        window.clearInterval(pollingInterval)
+    }
+})
+
+const fetchMessages = async (autoScroll = true) => {
     if (!activeConversation.value) return
     try {
         const response = await axios.get(`/api/conversations/${activeConversation.value.id}/messages`)
+        const prevLength = messages.value.length
         messages.value = response.data
-        scrollToBottom()
+        if (autoScroll || messages.value.length > prevLength) {
+            scrollToBottom()
+        }
     } catch (err) {
         console.error('Failed to fetch messages:', err)
     }
@@ -106,9 +217,11 @@ const sendMessage = async (textToSend?: string) => {
         newMessage.value = ''
     }
 
+    const tempId = Date.now()
+
     // Pre-emptively push my message locally for immediate user feedback
     messages.value.push({
-        id: Date.now(),
+        id: tempId,
         sender: 'me',
         sender_name: authUser.value?.name || 'You',
         sender_role: authUser.value?.role || 'customer',
@@ -119,76 +232,104 @@ const sendMessage = async (textToSend?: string) => {
     })
     scrollToBottom()
 
-    // Show simulated typing state in the UI for realistic response delay
     isTyping.value = true
 
-    try {
-        await axios.post(`/api/conversations/${activeConversation.value.id}/messages`, {
-            text: text,
-            type: 'text'
-        })
-        
-        // Wait 1.2 seconds to fetch the reply (saved in the database by the backend)
-        setTimeout(async () => {
+    router.post(`/api/conversations/${activeConversation.value.id}/messages`, {
+        text: text,
+        type: 'text'
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => {
             isTyping.value = false
-            await fetchMessages()
-            
-            // Update last message preview in list
+            fetchMessages()
+
             if (messages.value.length > 0 && activeConversation.value) {
                 const last = messages.value[messages.value.length - 1]
                 activeConversation.value.lastMessage = last.text
                 activeConversation.value.time = 'Just now'
             }
-        }, 1200)
-    } catch (err) {
-        isTyping.value = false
-        console.error('Failed to send message:', err)
-    }
+        },
+        onError: (err) => {
+            isTyping.value = false
+            messages.value = messages.value.filter(m => m.id !== tempId)
+            infoAlert('Failed to send message. Please try again.', 'Error', { type: 'error' })
+            console.error('Failed to send message:', err)
+        }
+    })
 }
 
-const sendMockAttachment = async (type: 'image' | 'file') => {
+const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const sendAttachment = async (file: File, type: 'image' | 'file') => {
     if (!activeConversation.value || activeConversation.value.status === 'concluded') return
 
     isTyping.value = true
 
-    // Push locally
+    const attachmentText = type === 'image' ? 'Uploaded panel diagram snippet.' : 'Attached system warranty document.'
+
+    const tempId = Date.now()
+
+    // Push locally for immediate feedback
     messages.value.push({
-        id: Date.now(),
+        id: tempId,
         sender: 'me',
         sender_name: authUser.value?.name || 'You',
         sender_role: authUser.value?.role || 'customer',
         sender_avatar: authUser.value?.avatar || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=150',
-        text: type === 'image' ? 'Uploaded panel diagram snippet.' : 'Attached system warranty document.',
+        text: attachmentText,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         type: type,
-        fileName: type === 'file' ? 'warranty_docs.pdf' : undefined,
-        fileSize: type === 'file' ? '2.4 MB' : undefined
+        fileName: file.name,
+        fileSize: formatFileSize(file.size),
+        imageUrl: type === 'image' ? URL.createObjectURL(file) : undefined
     })
     scrollToBottom()
 
-    try {
-        const formData = new FormData()
-        formData.append('type', type)
-        formData.append('text', type === 'image' ? 'Uploaded panel diagram snippet.' : 'Attached system warranty document.')
-        
-        // Create mock binary blob file
-        const blob = new Blob(['Mock attachment file'], { type: type === 'image' ? 'image/jpeg' : 'application/pdf' })
-        formData.append('attachment', blob, type === 'image' ? 'panel_diagram.jpg' : 'warranty_docs.pdf')
+    const formData = new FormData()
+    formData.append('type', type)
+    formData.append('text', attachmentText)
+    formData.append('attachment', file, file.name)
 
-        await axios.post(`/api/conversations/${activeConversation.value.id}/messages`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data'
-            }
-        })
-
-        setTimeout(async () => {
+    router.post(`/api/conversations/${activeConversation.value.id}/messages`, formData, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => {
             isTyping.value = false
-            await fetchMessages()
-        }, 1200)
-    } catch (err) {
-        isTyping.value = false
-        console.error('Failed to send attachment:', err)
+            fetchMessages()
+        },
+        onError: (err) => {
+            isTyping.value = false
+            messages.value = messages.value.filter(m => m.id !== tempId)
+            infoAlert('Failed to send attachment. Please try again.', 'Error', { type: 'error' })
+            console.error('Failed to send attachment:', err)
+        }
+    })
+}
+
+const handleAttachmentPicker = (type: 'image' | 'file') => {
+    if (type === 'image') {
+        imageAttachmentInput.value?.click()
+        return
     }
+
+    fileAttachmentInput.value?.click()
+}
+
+const handleAttachmentChange = async (event: Event, type: 'image' | 'file') => {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
+
+    if (!file) {
+        return
+    }
+
+    await sendAttachment(file, type)
+    input.value = ''
 }
 
 const selectConversation = (conv: Conversation) => {
@@ -196,11 +337,21 @@ const selectConversation = (conv: Conversation) => {
     fetchMessages()
 }
 
+import { useAlert } from '@/composables/useAlert'
+const { confirmAlert, infoAlert } = useAlert()
+
 // Conclude group conversation
-const concludeGroup = () => {
-    if (!activeConversation.value) return
-    if (confirm('Are you sure you want to conclude this conversation? This will lock the channel and make it read-only.')) {
+const concludeGroup = async () => {
+    if (!activeConversation.value || isProcessing.value) return
+    const confirmed = await confirmAlert(
+        'Are you sure you want to conclude this conversation? This will lock the channel and make it read-only.',
+        'Conclude Conversation',
+        { type: 'warning', confirmText: 'Conclude Chat' }
+    )
+    if (confirmed) {
         router.post(`/api/conversations/${activeConversation.value.id}/conclude`, {}, {
+            onStart: () => isProcessing.value = true,
+            onFinish: () => isProcessing.value = false,
             onSuccess: () => {
                 if (activeConversation.value) {
                     activeConversation.value.status = 'concluded'
@@ -211,16 +362,43 @@ const concludeGroup = () => {
 }
 
 // Delete group conversation
-const deleteGroup = () => {
-    if (!activeConversation.value) return
-    if (confirm('Are you sure you want to delete this group chat? This will remove all message logs from the system.')) {
+const deleteGroup = async () => {
+    if (!activeConversation.value || isProcessing.value) return
+    const confirmed = await confirmAlert(
+        'Are you sure you want to delete this group chat? This will remove all message logs from the system.',
+        'Delete Conversation',
+        { type: 'danger', confirmText: 'Delete Chat' }
+    )
+    if (confirmed) {
         router.delete(`/api/conversations/${activeConversation.value.id}`, {
+            onStart: () => isProcessing.value = true,
+            onFinish: () => isProcessing.value = false,
             onSuccess: () => {
                 conversations.value = conversations.value.filter(c => c.id !== activeConversation.value?.id)
                 activeConversation.value = conversations.value[0] || null
                 fetchMessages()
             }
         })
+    }
+}
+
+const removeMember = async (user: any) => {
+    if (!activeConversation.value) return
+    const confirmed = await confirmAlert(
+        `Are you sure you want to remove ${user.name} from the conversation?`,
+        'Remove Member',
+        { type: 'danger', confirmText: 'Remove' }
+    )
+    if (!confirmed) return
+    
+    try {
+        const response = await axios.delete(`/api/conversations/${activeConversation.value.id}/members/${user.id}`)
+        if (response.data.status === 'success') {
+            activeConversation.value.participants = response.data.participants
+            fetchMessages()
+        }
+    } catch (e: any) {
+        infoAlert(e.response?.data?.message || 'Failed to remove member.', 'Error', { type: 'error' })
     }
 }
 
@@ -258,7 +436,11 @@ const quickReplies = computed(() => {
 })
 
 const triggerCallSimulation = (isVideo = false) => {
-    alert(`Calling participants via ${isVideo ? 'Video Conference' : 'Audio Conference'}... (Simulation Mode)`)
+    infoAlert(
+        `Calling participants via ${isVideo ? 'Video Conference' : 'Audio Conference'}... (Simulation Mode)`,
+        'Starting Call',
+        { type: 'success' }
+    )
 }
 
 onMounted(() => {
@@ -274,76 +456,79 @@ watch(activeConversation, () => {
 
 <template>
     <Head title="SolarLink — Service Chat" />
-
-    <component :is="layoutComponent" :role="userRole" title="Service Messaging">
-        <div class="flex flex-col gap-6 text-left max-w-7xl mx-auto h-[calc(100vh-140px)] animate-fade-in">
-            
-            <div class="flex flex-col gap-1 shrink-0">
-                <div class="inline-flex items-center gap-1.5 self-start px-2 py-0.5 rounded bg-solar-primary-light dark:bg-solar-primary-dark text-solar-primary dark:text-solar-primary-accent font-bold text-[9px] uppercase tracking-wider">
-                    <Sparkles class="h-3 w-3" />
-                    <span>Real-time Support Network</span>
-                </div>
-                <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Active Service Group Channels</h2>
-            </div>
+    <component :is="layoutComponent" :role="userRole" :title="userRole === 'admin' ? 'Operations Audit' : 'Service Messaging'">
+        
+        <!-- Telegram Style Full Height Chat Container -->
+        <div class="flex text-left h-[calc(100vh-80px)] -m-6 sm:-m-8">
 
             <!-- Chat grid container -->
-            <div class="glass-card flex-grow overflow-hidden flex border border-solar-primary/10 dark:border-white/5 bg-white/50 dark:bg-solar-bg-dark/20 backdrop-blur-md rounded-2xl relative min-h-[500px]">
+            <div class="flex-grow overflow-hidden flex bg-white dark:bg-[#0E1628] w-full h-full relative">
                 
                 <!-- Left Sidebar (Group Channels list) -->
-                <div class="w-80 border-r border-solar-primary/10 dark:border-white/5 flex flex-col shrink-0 bg-white/60 dark:bg-solar-primary-dark/5">
-                    <!-- Search -->
-                    <div class="p-4 border-b border-solar-primary/10 dark:border-white/5">
-                        <div class="relative flex items-center">
-                            <Search class="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                <div class="w-[320px] md:w-[350px] border-r border-slate-200 dark:border-white/5 flex flex-col shrink-0 bg-white dark:bg-[#151b2b]">
+                    <!-- Search and New Chat -->
+                    <div class="p-3 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 shrink-0">
+                        <button @click="openNewChat('new')" class="h-10 w-10 shrink-0 bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-solar-primary rounded-full flex items-center justify-center transition-colors" title="New Message">
+                            <Plus class="h-5 w-5" />
+                        </button>
+                        <div class="relative flex-grow">
+                            <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                             <input 
                                 v-model="searchQuery"
                                 type="text" 
-                                placeholder="Search active threads..."
-                                class="w-full h-10 pl-10 pr-4 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-xs focus:outline-none focus:border-solar-primary transition-all duration-300"
+                                placeholder="Search..."
+                                class="w-full h-10 pl-10 pr-4 rounded-full bg-slate-100 dark:bg-white/5 border-transparent text-sm focus:bg-white dark:focus:bg-[#0E1628] focus:border-solar-primary focus:ring-1 focus:ring-solar-primary transition-all shadow-none"
                             />
                         </div>
                     </div>
 
                     <!-- Threads -->
-                    <div class="flex-grow overflow-y-auto divide-y divide-slate-100 dark:divide-white/3">
+                    <div class="flex-grow overflow-y-auto">
                         <button 
                             v-for="conv in filteredConversations" 
                             :key="conv.id"
                             @click="selectConversation(conv)"
-                            class="w-full p-4 flex items-start gap-3.5 text-left transition-all relative"
+                            class="w-full p-2.5 flex items-center gap-3 text-left transition-all relative outline-none"
                             :class="activeConversation?.id === conv.id 
-                                ? 'bg-solar-primary/10 dark:bg-solar-primary/10 border-l-4 border-l-solar-primary' 
-                                : 'hover:bg-slate-50 dark:hover:bg-white/3'"
+                                ? 'bg-solar-primary text-white' 
+                                : 'hover:bg-slate-50 dark:hover:bg-white/5 text-slate-800 dark:text-white'"
                         >
-                            <!-- Triple participant overlapping bubble avatar -->
-                            <div class="relative shrink-0 w-10 h-10 flex items-center justify-center">
+                            <!-- Avatar -->
+                            <div class="relative shrink-0 w-12 h-12 flex items-center justify-center">
                                 <div v-if="conv.participants.length >= 2" class="w-full h-full relative">
-                                    <img :src="conv.participants[0].avatar" class="absolute top-0 left-0 w-6 h-6 rounded-full object-cover border border-white dark:border-[#0f1322] shadow" />
-                                    <img :src="conv.participants[1].avatar" class="absolute bottom-0 right-0 w-6 h-6 rounded-full object-cover border border-white dark:border-[#0f1322] shadow" />
+                                    <img :src="conv.participants[0].avatar" class="absolute top-0 right-0 w-8 h-8 rounded-full object-cover border-2" :class="activeConversation?.id === conv.id ? 'border-solar-primary' : 'border-white dark:border-[#151b2b]'" />
+                                    <img :src="conv.participants[1].avatar" class="absolute bottom-0 left-0 w-8 h-8 rounded-full object-cover border-2" :class="activeConversation?.id === conv.id ? 'border-solar-primary' : 'border-white dark:border-[#151b2b]'" />
                                 </div>
                                 <div v-else-if="conv.participants.length === 1">
-                                    <img :src="conv.participants[0].avatar" class="w-8 h-8 rounded-full object-cover" />
+                                    <img :src="conv.participants[0].avatar" class="w-12 h-12 rounded-full object-cover" />
                                 </div>
-                                <div v-else class="h-8 w-8 rounded-full bg-slate-200 dark:bg-solar-primary-dark flex items-center justify-center text-slate-550 dark:text-solar-primary-accent text-xs font-bold">
+                                <div v-else class="h-12 w-12 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-300 font-bold">
                                     GP
                                 </div>
                                 <span 
                                     v-if="conv.status === 'concluded'"
-                                    class="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-slate-400 text-white flex items-center justify-center text-[7px]"
+                                    class="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-slate-400 text-white flex items-center justify-center text-[9px] border-2"
+                                    :class="activeConversation?.id === conv.id ? 'border-solar-primary' : 'border-white dark:border-[#151b2b]'"
                                     title="Concluded"
                                 >
-                                    <Lock class="h-2 w-2" />
+                                    <Lock class="h-2.5 w-2.5" />
                                 </span>
                             </div>
-                            <div class="flex-grow min-w-0">
-                                <div class="flex items-center justify-between">
-                                    <h4 class="font-extrabold text-xs text-slate-800 dark:text-white truncate">{{ conv.title }}</h4>
-                                    <span class="text-[9px] text-slate-400 shrink-0 ml-1">{{ conv.time }}</span>
+                            
+                            <div class="flex-grow min-w-0 flex flex-col justify-center h-full border-b border-slate-100 dark:border-white/5 pb-2 pt-1" :class="activeConversation?.id === conv.id ? 'border-transparent' : ''">
+                                <div class="flex items-center justify-between mb-0.5">
+                                    <h4 class="font-bold text-sm truncate" :class="activeConversation?.id === conv.id ? 'text-white' : 'text-slate-800 dark:text-white'">{{ conv.title || conv.participants.map(p => p.name).join(', ') }}</h4>
+                                    <span class="text-[11px] shrink-0 ml-2" :class="activeConversation?.id === conv.id ? 'text-white/80' : 'text-slate-400'">{{ conv.time }}</span>
                                 </div>
-                                <p class="text-[9px] text-slate-400 truncate mt-0.5">
-                                    {{ conv.participants.map(p => p.name).join(', ') }}
-                                </p>
-                                <p class="text-[10px] text-slate-450 dark:text-slate-400 truncate mt-1 leading-snug font-medium">{{ conv.lastMessage }}</p>
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-[13px] truncate" :class="activeConversation?.id === conv.id ? 'text-white/80' : 'text-slate-500'">
+                                        <span v-if="conv.messages && conv.messages.length > 0 && conv.messages[conv.messages.length-1].sender === 'me'" class="font-medium mr-1" :class="activeConversation?.id === conv.id ? 'text-white' : 'text-slate-800 dark:text-slate-200'">You:</span>
+                                        {{ conv.lastMessage || 'No messages yet' }}
+                                    </p>
+                                    <div v-if="conv.unread > 0" class="h-5 min-w-[20px] rounded-full flex items-center justify-center text-[10px] font-bold px-1.5" :class="activeConversation?.id === conv.id ? 'bg-white text-solar-primary' : 'bg-solar-primary text-white'">
+                                        {{ conv.unread }}
+                                    </div>
+                                </div>
                             </div>
                         </button>
 
@@ -355,64 +540,49 @@ watch(activeConversation, () => {
                 </div>
 
                 <!-- Central Chat Canvas -->
-                <div v-if="activeConversation" class="flex-grow flex flex-col min-w-0 bg-white/30 dark:bg-solar-primary-dark/2">
-                    
+                <div v-if="activeConversation" class="flex-grow flex flex-col min-w-0 relative" style="background-image: url('https://www.transparenttextures.com/patterns/cubes.png'); background-color: rgba(248,250,252,0.95);">
+                    <div class="absolute inset-0 bg-slate-50/95 dark:bg-[#0E1628]/95 z-0"></div>
+
                     <!-- Chat Header -->
-                    <div class="h-16 border-b border-solar-primary/10 dark:border-white/5 flex items-center justify-between px-5 bg-white/70 dark:bg-solar-bg-dark/40 shrink-0">
-                        <div class="flex items-center gap-3">
-                            <h4 class="font-extrabold text-xs text-slate-800 dark:text-white leading-tight">{{ activeConversation.title }}</h4>
-                            <span 
-                                class="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase tracking-wider"
-                                :class="activeConversation.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-400/10 text-slate-500'"
-                            >
-                                {{ activeConversation.status }}
-                            </span>
+                    <div class="h-14 border-b border-slate-200 dark:border-white/5 flex items-center justify-between px-4 bg-white/95 dark:bg-[#151b2b]/95 backdrop-blur-sm shrink-0 z-10 cursor-pointer hover:bg-slate-50 dark:hover:bg-[#181f32] transition-colors" @click="showDetails = !showDetails">
+                        <div class="flex items-center gap-3 overflow-hidden">
+                            <!-- Header Avatar -->
+                            <div class="relative shrink-0 w-10 h-10 flex items-center justify-center">
+                                <div v-if="activeConversation.participants.length >= 2" class="w-full h-full relative">
+                                    <img :src="activeConversation.participants[0].avatar" class="absolute top-0 right-0 w-6 h-6 rounded-full object-cover border-2 border-white dark:border-[#151b2b]" />
+                                    <img :src="activeConversation.participants[1].avatar" class="absolute bottom-0 left-0 w-6 h-6 rounded-full object-cover border-2 border-white dark:border-[#151b2b]" />
+                                </div>
+                                <img v-else-if="activeConversation.participants.length === 1" :src="activeConversation.participants[0].avatar" class="w-10 h-10 rounded-full object-cover" />
+                            </div>
+                            <div class="min-w-0 flex flex-col justify-center">
+                                <h4 class="font-bold text-[15px] text-slate-800 dark:text-white truncate leading-tight">{{ activeConversation.title || activeConversation.participants.map(p => p.name).join(', ') }}</h4>
+                                <p class="text-xs text-slate-500 truncate mt-0.5">
+                                    {{ activeConversation.participants.length }} members <span v-if="activeConversation.online" class="text-solar-primary ml-1">• online</span>
+                                </p>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-1.5">
+                        <div class="flex items-center gap-2" @click.stop>
                             <button 
                                 @click="triggerCallSimulation(false)"
-                                class="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-solar-primary-dark/30 hover:text-solar-primary transition-all"
-                                title="Start Audio Conference"
+                                class="h-10 w-10 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-solar-primary transition-all flex items-center justify-center"
+                                title="Start Audio Call"
                             >
-                                <Phone class="h-4 w-4" />
+                                <Phone class="h-5 w-5" />
                             </button>
                             <button 
                                 @click="triggerCallSimulation(true)"
-                                class="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-solar-primary-dark/30 hover:text-solar-primary transition-all"
-                                title="Start Video Conference"
+                                class="h-10 w-10 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-solar-primary transition-all flex items-center justify-center"
+                                title="Start Video Call"
                             >
-                                <Video class="h-4 w-4" />
+                                <Video class="h-5 w-5" />
                             </button>
-                            <div class="w-px h-6 bg-slate-200 dark:bg-white/10 mx-1"></div>
-                            
-                            <!-- Conclude chat action -->
-                            <button 
-                                v-if="activeConversation.status === 'active' && userRole === 'customer'"
-                                @click="concludeGroup"
-                                class="px-2.5 h-8 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 hover:text-white text-[10px] font-bold transition-all flex items-center gap-1"
-                                title="Conclude chat group"
-                            >
-                                <CheckCircle2 class="h-3.5 w-3.5" />
-                                <span>Conclude</span>
-                            </button>
-
-                            <!-- Delete group action -->
-                            <button 
-                                v-if="userRole === 'customer'"
-                                @click="deleteGroup"
-                                class="px-2.5 h-8 rounded-lg bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white text-[10px] font-bold transition-all flex items-center gap-1"
-                                title="Delete group chat"
-                            >
-                                <span>Delete Group</span>
-                            </button>
-
                             <button 
                                 @click="showDetails = !showDetails"
-                                class="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-solar-primary-dark/30 transition-all"
-                                :class="showDetails ? 'bg-solar-primary/10 text-solar-primary dark:text-solar-primary-accent' : ''"
-                                title="Toggle Contact Details"
+                                class="h-10 w-10 rounded-full transition-all flex items-center justify-center"
+                                :class="showDetails ? 'text-solar-primary bg-solar-primary/10' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-solar-primary'"
+                                title="Chat Info"
                             >
-                                <UserCheck class="h-4 w-4" />
+                                <Info class="h-5 w-5" />
                             </button>
                         </div>
                     </div>
@@ -420,75 +590,98 @@ watch(activeConversation, () => {
                     <!-- Messages Stream -->
                     <div 
                         ref="messageContainer"
-                        class="flex-grow overflow-y-auto p-5 flex flex-col gap-4 bg-slate-50/50 dark:bg-solar-bg-dark/10"
+                        class="flex-grow overflow-y-auto p-4 md:p-6 flex flex-col gap-3 relative z-0"
                     >
-                        <div 
-                            v-for="msg in messages" 
-                            :key="msg.id"
-                            class="flex gap-2.5 max-w-[80%]"
-                            :class="msg.sender === 'me' ? 'self-end flex-row-reverse' : 'self-start flex-row'"
-                        >
+                        <template v-for="msg in messages" :key="msg.id">
+                            <!-- System Message -->
+                            <div v-if="msg.type === 'system'" class="w-full flex justify-center items-center my-2">
+                                <div class="flex-grow border-t border-dotted border-slate-300 dark:border-slate-600"></div>
+                                <div class="mx-4 text-[11px] font-medium text-slate-500 bg-slate-100 dark:bg-[#151b2b] px-4 py-1.5 rounded-full text-center shrink-0 shadow-sm border border-slate-200 dark:border-white/5">
+                                    {{ msg.text }} <span class="text-slate-400 font-normal ml-1">at {{ msg.time }}</span>
+                                </div>
+                                <div class="flex-grow border-t border-dotted border-slate-300 dark:border-slate-600"></div>
+                            </div>
+
+                            <!-- Normal Message -->
+                            <div 
+                                v-else
+                                class="flex gap-2 max-w-[85%] md:max-w-[75%]"
+                                :class="msg.sender === 'me' ? 'self-end flex-row-reverse' : 'self-start flex-row'"
+                            >
                             <!-- Avatar -->
                             <img 
-                                v-if="msg.sender === 'them'" 
                                 :src="msg.sender_avatar" 
                                 :alt="msg.sender_name" 
-                                class="h-7 w-7 rounded-full object-cover shrink-0 mt-0.5 border border-slate-100 dark:border-white/10" 
+                                class="h-8 w-8 rounded-full object-cover shrink-0 self-end mb-1" 
                             />
                             
-                            <div class="flex flex-col">
-                                <!-- Sender details for group identification -->
-                                <span v-if="msg.sender === 'them'" class="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-0.5">
-                                    {{ msg.sender_name }} • {{ msg.sender_role }}
+                            <div class="flex flex-col min-w-0" :class="msg.sender === 'me' ? 'items-end' : 'items-start'">
+                                <!-- Sender details -->
+                                <span class="text-[11px] font-bold text-solar-primary mb-0.5" :class="msg.sender === 'me' ? 'mr-1' : 'ml-1'">
+                                    {{ msg.sender_name }}
                                 </span>
                                 
                                 <!-- Message bubble -->
-                                <div class="flex flex-col" :class="msg.sender === 'me' ? 'items-end' : 'items-start'">
+                                <div class="flex flex-col relative group" :class="msg.sender === 'me' ? 'items-end' : 'items-start'">
+                                    
                                     <!-- Text Bubble -->
                                     <div 
                                         v-if="!msg.type || msg.type === 'text'"
-                                        class="px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-sm font-medium"
+                                        class="px-3.5 py-2 rounded-2xl text-[14px] leading-relaxed shadow-sm font-medium relative"
                                         :class="msg.sender === 'me' 
-                                            ? 'bg-gradient-to-r from-solar-primary to-solar-primary-active text-white rounded-br-sm' 
-                                            : 'bg-white dark:bg-solar-primary-dark/20 border border-slate-100 dark:border-white/5 text-slate-700 dark:text-slate-200 rounded-bl-sm'"
+                                            ? 'bg-solar-primary text-white rounded-br-none' 
+                                            : 'bg-white dark:bg-[#151b2b] text-slate-800 dark:text-slate-200 rounded-bl-none'"
                                     >
-                                        <p>{{ msg.text }}</p>
+                                        <p style="word-break: break-word;">{{ msg.text }}</p>
+                                        <div class="flex items-center justify-end gap-1 mt-1 -mr-1">
+                                            <span class="text-[10px]" :class="msg.sender === 'me' ? 'text-white/70' : 'text-slate-400'">{{ msg.time }}</span>
+                                            <CheckCheck v-if="msg.sender === 'me'" class="h-3 w-3 text-white/70" />
+                                        </div>
                                     </div>
 
                                     <!-- Image Bubble -->
                                     <div 
                                         v-else-if="msg.type === 'image'"
-                                        class="rounded-2xl overflow-hidden border border-slate-100 dark:border-white/5 shadow-md flex flex-col max-w-[280px]"
+                                        class="rounded-2xl overflow-hidden shadow-sm flex flex-col max-w-[300px] relative"
+                                        :class="msg.sender === 'me' ? 'rounded-br-none bg-solar-primary' : 'rounded-bl-none bg-white dark:bg-[#151b2b]'"
                                     >
-                                        <img :src="msg.imageUrl" alt="Attachment" class="max-h-48 object-cover w-full" />
-                                        <div class="px-3 py-2 bg-white dark:bg-solar-primary-dark/40 border-t border-slate-100 dark:border-white/5 text-[10px] w-full text-slate-650 dark:text-slate-350 font-bold">
-                                            {{ msg.text }}
+                                        <img :src="msg.imageUrl" alt="Attachment" class="max-h-[300px] object-cover w-full" />
+                                        <div class="px-3 py-2 text-[12px] w-full font-medium flex justify-between items-end gap-3" :class="msg.sender === 'me' ? 'text-white' : 'text-slate-800 dark:text-slate-200'">
+                                            <span>{{ msg.text }}</span>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <span class="text-[10px]" :class="msg.sender === 'me' ? 'text-white/70' : 'text-slate-400'">{{ msg.time }}</span>
+                                                <CheckCheck v-if="msg.sender === 'me'" class="h-3 w-3 text-white/70" />
+                                            </div>
                                         </div>
                                     </div>
 
                                     <!-- File Bubble -->
                                     <div 
                                         v-else-if="msg.type === 'file'"
-                                        class="px-4 py-3.5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3.5"
+                                        class="px-3 py-3 rounded-2xl shadow-sm flex items-center gap-3 min-w-[200px]"
                                         :class="msg.sender === 'me' 
-                                            ? 'bg-solar-primary/10 dark:bg-solar-primary-dark/20 text-slate-800 dark:text-white rounded-br-sm' 
-                                            : 'bg-white dark:bg-solar-primary-dark/20 text-slate-700 dark:text-slate-200 rounded-bl-sm'"
+                                            ? 'bg-solar-primary text-white rounded-br-none' 
+                                            : 'bg-white dark:bg-[#151b2b] text-slate-800 dark:text-slate-200 rounded-bl-none'"
                                     >
-                                        <div class="h-10 w-10 rounded-xl bg-solar-primary/20 text-solar-primary flex items-center justify-center shrink-0">
+                                        <div class="h-10 w-10 rounded-full flex items-center justify-center shrink-0" :class="msg.sender === 'me' ? 'bg-white/20 text-white' : 'bg-solar-primary/10 text-solar-primary'">
                                             <FileText class="h-5 w-5" />
                                         </div>
-                                        <div class="min-w-0 flex-grow text-left">
-                                            <h5 class="text-xs font-bold truncate leading-snug">{{ msg.fileName }}</h5>
-                                            <p class="text-[9px] text-slate-400 font-medium mt-0.5 uppercase tracking-wide">{{ msg.fileSize }}</p>
+                                        <div class="min-w-0 flex-grow flex flex-col justify-center">
+                                            <h5 class="text-[13px] font-bold truncate leading-tight">{{ msg.fileName }}</h5>
+                                            <div class="flex items-center justify-between gap-2 mt-0.5">
+                                                <p class="text-[11px] font-medium uppercase tracking-wide" :class="msg.sender === 'me' ? 'text-white/70' : 'text-slate-500'">{{ msg.fileSize }}</p>
+                                                <div class="flex items-center gap-1">
+                                                    <span class="text-[10px]" :class="msg.sender === 'me' ? 'text-white/70' : 'text-slate-400'">{{ msg.time }}</span>
+                                                    <CheckCheck v-if="msg.sender === 'me'" class="h-3 w-3 text-white/70" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                     
-                                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1 px-1">
-                                        {{ msg.time }}
-                                    </span>
                                 </div>
                             </div>
                         </div>
+                        </template>
 
                         <!-- Typing Simulator -->
                         <div v-if="isTyping" class="flex items-start gap-2.5 animate-pulse">
@@ -504,123 +697,263 @@ watch(activeConversation, () => {
                     </div>
 
                     <!-- Input Controls -->
-                    <div class="border-t border-solar-primary/10 dark:border-white/5 p-4 bg-white/70 dark:bg-solar-bg-dark/40 flex flex-col gap-3 shrink-0">
+                    <div class="p-3 md:p-4 bg-transparent shrink-0 z-10 w-full max-w-4xl mx-auto flex flex-col gap-2">
+                        
+                        <!-- Suggestion Chips -->
+                        <div v-if="activeConversation.status !== 'concluded' && quickReplies.length > 0" class="flex flex-wrap gap-2 overflow-x-auto no-scrollbar pb-1">
+                            <button 
+                                v-for="reply in quickReplies" 
+                                :key="reply.text"
+                                @click="sendMessage(reply.text)"
+                                class="px-3 py-1.5 rounded-full bg-white dark:bg-[#151b2b] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 text-[12px] font-medium shadow-sm transition-all whitespace-nowrap"
+                            >
+                                {{ reply.label }}
+                            </button>
+                        </div>
+
                         <!-- Locked state for concluded conversations -->
-                        <div v-if="activeConversation.status === 'concluded'" class="flex items-center justify-center gap-2 py-2 text-slate-500 font-bold text-xs uppercase tracking-wider bg-slate-100 dark:bg-white/5 rounded-xl">
+                        <div v-if="activeConversation.status === 'concluded'" class="flex items-center justify-center gap-2 py-3 text-slate-500 font-bold text-xs uppercase tracking-wider bg-white/80 dark:bg-[#151b2b]/80 backdrop-blur-sm rounded-xl shadow-sm">
                             <Lock class="h-4 w-4" />
-                            <span>This conversation group is concluded and locked.</span>
+                            <span>This conversation group is locked</span>
                         </div>
                         
-                        <div v-else class="flex flex-col gap-3">
-                            <!-- Suggestion Chips -->
-                            <div class="flex flex-wrap gap-2">
+                        <!-- Form -->
+                        <form v-else @submit.prevent="sendMessage()" class="flex items-end gap-2 bg-white dark:bg-[#151b2b] rounded-2xl md:rounded-full shadow-sm pr-2 pl-1 py-1 relative">
+                            <!-- Attachments Menu -->
+                            <div class="flex items-center shrink-0">
                                 <button 
-                                    v-for="reply in quickReplies" 
-                                    :key="reply.text"
-                                    @click="sendMessage(reply.text)"
-                                    class="px-3 py-1.5 rounded-xl border border-solar-primary/20 hover:border-solar-primary text-slate-650 dark:text-slate-350 hover:text-solar-primary dark:hover:text-solar-primary-accent text-[10px] font-bold transition-all bg-solar-primary/5 hover:bg-solar-primary/10 hover:-translate-y-0.5 active:translate-y-0"
+                                    type="button"
+                                    @click="handleAttachmentPicker('image')"
+                                    class="p-2.5 rounded-full text-slate-400 hover:text-solar-primary hover:bg-slate-50 dark:hover:bg-white/5 transition-all"
+                                    title="Attach image"
                                 >
-                                    {{ reply.label }}
+                                    <Paperclip class="h-5 w-5" />
                                 </button>
+                                <input
+                                    ref="imageAttachmentInput"
+                                    type="file"
+                                    accept="image/*"
+                                    class="hidden"
+                                    @change="(event) => handleAttachmentChange(event, 'image')"
+                                />
+                                <input
+                                    ref="fileAttachmentInput"
+                                    type="file"
+                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                                    class="hidden"
+                                    @change="(event) => handleAttachmentChange(event, 'file')"
+                                />
                             </div>
 
-                            <!-- Form -->
-                            <form @submit.prevent="sendMessage()" class="flex items-center gap-3">
-                                <div class="flex items-center gap-1 shrink-0">
-                                    <button 
-                                        type="button"
-                                        @click="sendMockAttachment('image')"
-                                        class="p-2 rounded-xl text-slate-500 hover:text-solar-primary hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
-                                        title="Attach mock panel diagram image"
-                                    >
-                                        <Image class="h-4.5 w-4.5" />
-                                    </button>
-                                    <button 
-                                        type="button"
-                                        @click="sendMockAttachment('file')"
-                                        class="p-2 rounded-xl text-slate-500 hover:text-solar-primary hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
-                                        title="Attach mock warranty docs PDF"
-                                    >
-                                        <FileText class="h-4.5 w-4.5" />
-                                    </button>
-                                </div>
+                            <div class="flex-grow flex items-center min-h-[44px]">
+                                <input 
+                                    v-model="newMessage"
+                                    type="text"
+                                    placeholder="Message..."
+                                    class="w-full bg-transparent border-transparent text-[15px] focus:outline-none focus:ring-0 shadow-none px-2 py-2.5 text-slate-800 dark:text-white placeholder-slate-400"
+                                />
+                            </div>
 
-                                <div class="flex-grow relative flex items-center">
-                                    <input 
-                                        v-model="newMessage"
-                                        type="text"
-                                        placeholder="Write a message to group participants..."
-                                        class="w-full h-11 pl-4 pr-12 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-solar-primary transition-all"
-                                    />
-                                    <span class="absolute right-3.5 text-[9px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider hidden sm:flex">
-                                        <span>Enter</span>
-                                        <CornerDownLeft class="h-3 w-3" />
-                                    </span>
-                                </div>
-
+                            <div class="shrink-0 pb-0.5">
                                 <button 
+                                    v-if="newMessage.trim()"
                                     type="submit"
-                                    class="h-11 w-11 rounded-xl bg-solar-primary hover:bg-solar-primary-active text-white flex items-center justify-center shadow-solar hover:shadow-solar-glow transition-all"
+                                    class="h-10 w-10 rounded-full bg-solar-primary hover:bg-solar-primary-active text-white flex items-center justify-center transition-transform active:scale-95"
                                 >
-                                    <Send class="h-4 w-4" />
+                                    <Send class="h-4 w-4 ml-0.5" />
                                 </button>
-                            </form>
-                        </div>
+                                <button 
+                                    v-else
+                                    type="button"
+                                    class="h-10 w-10 rounded-full text-slate-400 hover:text-solar-primary hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-center transition-all"
+                                >
+                                    <Mic class="h-5 w-5" />
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
 
                 <!-- Empty Chat placeholder -->
-                <div v-else class="flex-grow flex flex-col items-center justify-center text-center p-10 bg-slate-50/50 dark:bg-solar-bg-dark/10 text-slate-450 dark:text-slate-500">
-                    <MessageSquare class="h-16 w-16 text-slate-350 dark:text-slate-750 mb-3.5" />
-                    <h3 class="font-extrabold text-base text-slate-800 dark:text-white">No active thread</h3>
-                    <p class="text-xs max-w-sm mt-1">Select one of your tripartite support or hardware group chats in the sidebar to review logs or send queries.</p>
+                <div v-else class="flex-grow flex flex-col items-center justify-center text-center bg-slate-50 dark:bg-[#0E1628]">
+                    <div class="flex flex-col items-center gap-4">
+                        <div class="h-24 w-24 rounded-full bg-solar-primary/10 flex items-center justify-center">
+                            <MessageSquare class="h-12 w-12 text-solar-primary" />
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xl text-slate-800 dark:text-white">Select a chat to start messaging</h3>
+                            <p class="text-sm text-slate-500 mt-1 max-w-md">Choose from your existing conversations or start a new one.</p>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Right Context sidebar (Participant Details) -->
                 <div 
-                    v-if="showDetails && activeConversation"
-                    class="w-72 border-l border-solar-primary/10 dark:border-white/5 flex flex-col shrink-0 bg-white/50 dark:bg-solar-bg-dark/30 hidden lg:flex animate-fade-in-right overflow-y-auto"
+                    v-if="activeConversation"
+                    class="w-[300px] border-l border-slate-200 dark:border-white/5 flex flex-col shrink-0 bg-white dark:bg-[#151b2b] overflow-y-auto"
                 >
-                    <div class="p-5 flex flex-col gap-6">
-                        <h4 class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-left">Group Participants</h4>
-                        
-                        <!-- List of participants -->
-                        <div class="flex flex-col gap-4">
-                            <div 
-                                v-for="part in activeConversation.participants" 
-                                :key="part.id"
-                                class="flex items-center gap-3 bg-slate-50/50 dark:bg-white/3 border border-slate-100 dark:border-white/5 p-3 rounded-xl text-left"
-                            >
-                                <img :src="part.avatar" :alt="part.name" class="h-10 w-10 rounded-lg object-cover ring-1 ring-solar-primary/10 shadow-sm" />
-                                <div class="min-w-0 flex-grow">
-                                    <h5 class="font-extrabold text-xs text-slate-850 dark:text-white truncate leading-snug">{{ part.name }}</h5>
-                                    <p class="text-[8px] text-solar-primary dark:text-solar-primary-accent font-extrabold uppercase tracking-widest mt-0.5">{{ part.role }}</p>
-                                </div>
+                    <div class="p-5 flex flex-col gap-5">
+                        <!-- Chat Group Header -->
+                        <div class="flex flex-col items-center gap-3 text-center pt-2">
+                            <div class="relative w-20 h-20">
+                                <img v-if="creatorParticipant" :src="creatorParticipant.avatar" class="w-full h-full rounded-full object-cover border-4 border-slate-100 dark:border-white/5 shadow-sm" />
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-[15px] text-slate-800 dark:text-white">{{ activeConversation.title || activeConversation.participants.map(p => p.name).join(', ') }}</h4>
+                                <p class="text-xs text-slate-500 mt-0.5">{{ activeConversation.participants.length }} members</p>
                             </div>
                         </div>
 
                         <hr class="border-slate-100 dark:border-white/5" />
 
-                        <!-- Specifications and licensing info -->
-                        <div class="flex flex-col gap-3 text-left">
-                            <h4 class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Specifications</h4>
-                            
-                            <div class="flex flex-col gap-2.5 text-xs text-slate-650 dark:text-slate-350">
-                                <div class="flex items-center gap-2">
-                                    <ShieldCheck class="h-4 w-4 text-solar-primary shrink-0" />
-                                    <span class="font-semibold">Fully Encrypted Channel</span>
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-left">Members</h4>
+                            <button v-if="isCreator" @click="openNewChat('add')" class="text-[11px] font-bold text-solar-primary hover:text-solar-primary-active transition-colors flex items-center gap-1">
+                                <Plus class="h-3 w-3" /> Add
+                            </button>
+                        </div>
+                        
+                        <!-- List of participants -->
+                        <div class="flex flex-col gap-1">
+                            <div 
+                                v-for="part in activeConversation.participants" 
+                                :key="part.id"
+                                class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-left transition-colors cursor-pointer group"
+                            >
+                                <img :src="part.avatar" :alt="part.name" class="h-10 w-10 rounded-full object-cover" />
+                                <div class="min-w-0 flex-grow">
+                                    <h5 class="font-bold text-[13px] text-slate-800 dark:text-white truncate leading-snug">{{ part.name }}</h5>
+                                    <div class="flex items-center gap-2 mt-0.5">
+                                        <p class="text-[11px] text-slate-500 capitalize">{{ part.role }}</p>
+                                        <span v-if="creatorParticipant && part.id === creatorParticipant.id" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-solar-primary/10 text-solar-primary uppercase tracking-wider">Admin</span>
+                                    </div>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <Star class="h-4 w-4 text-amber-500 shrink-0 fill-amber-500" />
-                                    <span class="font-semibold">SLA-backed SLA Routing</span>
-                                </div>
+                                <button 
+                                    v-if="part.id !== authUser?.id && isCreator"
+                                    @click.stop="removeMember(part)"
+                                    class="text-[11px] font-bold text-red-500 hover:text-white hover:bg-red-500 bg-red-50 dark:bg-red-500/10 px-2 py-1 rounded transition-colors"
+                                    title="Remove from chat"
+                                >
+                                    Remove
+                                </button>
                             </div>
+                        </div>
+
+                        <hr class="border-slate-100 dark:border-white/5" />
+
+                        <!-- Channel Info -->
+                        <div class="flex flex-col gap-2.5 text-left">
+                            <div class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                                <ShieldCheck class="h-5 w-5 text-solar-primary shrink-0" />
+                                <span>Encrypted</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                                <Star class="h-5 w-5 text-amber-500 shrink-0 fill-amber-500" />
+                                <span>SLA Routing</span>
+                            </div>
+                        </div>
+
+                        <hr class="border-slate-100 dark:border-white/5" />
+
+                        <!-- Actions -->
+                        <div class="flex flex-col gap-2">
+                            <button 
+                                v-if="activeConversation.status === 'active' && isCreator"
+                                @click="concludeGroup"
+                                :disabled="isProcessing"
+                                class="w-full py-2.5 rounded-xl text-sm font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                <CheckCircle2 v-if="!isProcessing" class="h-4 w-4" />
+                                <span v-if="isProcessing" class="h-4 w-4 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin"></span>
+                                {{ isProcessing ? 'Concluding...' : 'Conclude Chat' }}
+                            </button>
+                            <button 
+                                v-if="isCreator"
+                                @click="deleteGroup"
+                                :disabled="isProcessing"
+                                class="w-full py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                Delete Chat
+                            </button>
                         </div>
                     </div>
                 </div>
 
             </div>
+        </div>
 
+        <!-- New Chat Modal -->
+        <div v-if="showNewChatModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+            <div class="bg-white dark:bg-solar-bg-dark rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-100 dark:border-white/5 flex flex-col max-h-[85vh]">
+                <div class="px-5 py-4 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-solar-primary-dark/5">
+                    <h3 class="font-extrabold text-sm text-slate-800 dark:text-white">{{ modalMode === 'add' ? 'Add Members' : 'Start New Conversation' }}</h3>
+                    <button @click="closeNewChat" class="text-slate-400 hover:text-red-500 transition-colors">
+                        <X class="h-5 w-5" />
+                    </button>
+                </div>
+                
+                <div class="p-5 flex flex-col gap-4 overflow-y-auto">
+                    <!-- Search input -->
+                    <div class="relative flex items-center">
+                        <Search class="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                        <input 
+                            v-model="userSearchQuery"
+                            @input="searchForUsers"
+                            type="text" 
+                            placeholder="Search by name, email, or role..."
+                            class="w-full h-11 pl-10 pr-4 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-xs focus:outline-none focus:border-solar-primary transition-all"
+                        />
+                        <div v-if="isSearching" class="absolute right-3.5 flex items-center justify-center">
+                            <span class="h-4 w-4 border-2 border-solar-primary border-t-transparent rounded-full animate-spin"></span>
+                        </div>
+                    </div>
+
+                    <!-- Selected Participants Chips -->
+                    <div v-if="selectedUsers.length > 0" class="flex flex-wrap gap-2">
+                        <div v-for="u in selectedUsers" :key="u.id" class="px-2.5 py-1 bg-solar-primary/10 text-solar-primary text-[10px] font-bold rounded-lg flex items-center gap-1.5 border border-solar-primary/20">
+                            <img :src="u.avatar" class="w-4 h-4 rounded-full object-cover" />
+                            <span>{{ u.name }}</span>
+                            <button @click="toggleUserSelection(u)" class="hover:text-red-500"><X class="h-3 w-3" /></button>
+                        </div>
+                    </div>
+
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Search Results</div>
+                    
+                    <div v-if="searchResults.length === 0 && userSearchQuery" class="text-xs text-slate-500 text-center py-4">
+                        No users found.
+                    </div>
+                    
+                    <div v-else class="flex flex-col gap-2">
+                        <button 
+                            v-for="user in searchResults" 
+                            :key="user.id"
+                            @click="toggleUserSelection(user)"
+                            class="flex items-center gap-3 p-3 rounded-xl border text-left transition-all"
+                            :class="selectedUsers.find(su => su.id === user.id) ? 'bg-solar-primary/5 border-solar-primary' : 'bg-white dark:bg-solar-primary-dark/10 border-slate-100 dark:border-white/5 hover:border-slate-300'"
+                        >
+                            <img :src="user.avatar" class="w-10 h-10 rounded-full object-cover" />
+                            <div class="flex-grow">
+                                <h4 class="text-xs font-bold text-slate-800 dark:text-white">{{ user.name }}</h4>
+                                <p class="text-[10px] text-slate-500">{{ user.email }} • <span class="uppercase tracking-wider font-bold text-solar-primary">{{ user.role }}</span></p>
+                            </div>
+                            <div v-if="selectedUsers.find(su => su.id === user.id)" class="text-solar-primary">
+                                <CheckCircle2 class="h-5 w-5" />
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="px-5 py-4 border-t border-slate-100 dark:border-white/5 flex justify-end gap-3 bg-slate-50/50 dark:bg-solar-primary-dark/5">
+                    <button @click="closeNewChat" class="px-4 py-2 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10 transition">Cancel</button>
+                    <button 
+                        @click="startNewConversation" 
+                        :disabled="selectedUsers.length === 0"
+                        class="px-5 py-2 rounded-lg text-xs font-bold bg-solar-primary text-white hover:bg-solar-primary-active transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        {{ modalMode === 'add' ? 'Add Members' : 'Start Chat' }} <span v-if="selectedUsers.length > 0">({{ selectedUsers.length }})</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </component>
 </template>

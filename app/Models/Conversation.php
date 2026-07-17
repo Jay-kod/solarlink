@@ -9,7 +9,15 @@ class Conversation extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['title', 'status'];
+    protected $fillable = ['title', 'status', 'created_by'];
+
+    /**
+     * Get the user who created this conversation.
+     */
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 
     /**
      * Get the users/participants in this conversation.

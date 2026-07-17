@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import CustomerLayout from '@/Layouts/CustomerLayout.vue'
-import { mockProducts, Product, ProductCategories } from '@/data/products'
+import { productCatalog, Product, ProductCategories } from '@/data/products'
 import { ShoppingBag, Star, Search, Filter, Sparkles, CheckCircle2, ChevronRight, X, Trash2, Heart } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -19,7 +19,7 @@ const props = defineProps<{
     }>
 }>()
 
-const products = ref<Product[]>(props.products && props.products.length > 0 ? props.products : mockProducts)
+const products = ref<Product[]>(props.products && props.products.length > 0 ? props.products : productCatalog)
 const searchQuery = ref('')
 const selectedCategory = ref<ProductCategories | 'all'>('all')
 

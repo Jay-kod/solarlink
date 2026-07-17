@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3'
 import DashboardLayout from './DashboardLayout.vue'
-import { Cpu, Zap, Calendar, ShoppingBag, MessageSquare, Bell } from 'lucide-vue-next'
+import GlobalAlert from '@/Components/GlobalAlert.vue'
+import { Cpu, Zap, Calendar, ShoppingBag, MessageSquare, Bell, Wrench } from 'lucide-vue-next'
 
 defineProps<{
     title: string;
@@ -10,6 +11,7 @@ defineProps<{
 const mobileTabs = [
     { name: 'Telemetry', href: '/user', icon: Cpu },
     { name: 'Map', href: '/user/map', icon: Zap },
+    { name: 'Tickets', href: '/user/maintenance', icon: Wrench },
     { name: 'Bookings', href: '/user/bookings', icon: Calendar },
     { name: 'Parts', href: '/user/marketplace', icon: ShoppingBag },
     { name: 'Chat', href: '/user/chat', icon: MessageSquare }

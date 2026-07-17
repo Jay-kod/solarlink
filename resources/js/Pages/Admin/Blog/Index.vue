@@ -4,6 +4,8 @@ import { Head } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 import { FileText, Plus, Trash2, X, Sparkles, CheckCircle2, Eye, Edit, Search, Upload } from 'lucide-vue-next'
 
+import { router } from '@inertiajs/vue3'
+
 interface BlogPost {
     id: number;
     title: string;
@@ -12,15 +14,14 @@ interface BlogPost {
     date: string;
     views: string;
     status: 'published' | 'draft';
+    content: string;
 }
 
-const blogPosts = ref<BlogPost[]>([
-    { id: 801, title: 'How to Prevent Panel Dust Build-Up This Summer', author: 'Dr. Evelyn Carter', category: 'Guide', date: 'May 24, 2026', views: '2.4k', status: 'published' },
-    { id: 802, title: 'Why LFP Battery Stacking is Changing Home Energy Storage', author: 'Siddharth Patel', category: 'News', date: 'May 20, 2026', views: '1.8k', status: 'published' },
-    { id: 803, title: 'Net Metering Policies Update - California NEMA 3.0 Guidelines', author: 'Alex Thompson', category: 'Advisory', date: 'May 18, 2026', views: '3.1k', status: 'published' },
-    { id: 804, title: 'Upcoming App Integration with smart telemetry arrays', author: 'Grace Hopper', category: 'Announcement', date: 'May 15, 2026', views: '720', status: 'draft' },
-    { id: 805, title: 'Winterizing your solar power setups: Critical checklist', author: 'Dr. Evelyn Carter', category: 'Guide', date: 'Jan 10, 2026', views: '430', status: 'draft' }
-])
+const props = defineProps<{
+    blogPosts?: BlogPost[]
+}>()
+
+const blogPosts = ref<BlogPost[]>(props.blogPosts || [])
 
 const isCreateModalOpen = ref(false)
 const searchQuery = ref('')
@@ -33,35 +34,46 @@ const newContent = ref('')
 const isDraft = ref(true)
 
 const handleCreatePost = () => {
-    const freshPost: BlogPost = {
-        id: blogPosts.value.length + 801,
+    const payload = {
         title: newTitle.value || 'Untitled Grid Insight',
         author: newAuthor.value,
         category: newCategory.value,
         status: isDraft.value ? 'draft' : 'published',
-        date: 'Today',
-        views: '0'
+        content: newContent.value || 'Coming soon...'
     }
-    blogPosts.value.unshift(freshPost)
-    isCreateModalOpen.value = false
     
-    // reset form
-    newTitle.value = ''
-    newCategory.value = 'News'
-    newContent.value = ''
-    isDraft.value = true
+    router.post('/admin/blog', payload, {
+        onSuccess: () => {
+            isCreateModalOpen.value = false
+            newTitle.value = ''
+            newCategory.value = 'News'
+            newContent.value = ''
+            isDraft.value = true
+        }
+    })
 }
 
-const handleDeletePost = (id: number) => {
-    if (confirm('Are you sure you want to delete this blog post?')) {
-        blogPosts.value = blogPosts.value.filter(p => p.id !== id)
+import { useAlert } from '@/composables/useAlert'
+const { confirmAlert } = useAlert()
+
+const handleDeletePost = async (id: number) => {
+    const confirmed = await confirmAlert(
+        'Are you sure you want to delete this blog post?',
+        'Confirm Deletion',
+        { type: 'danger', confirmText: 'Delete Post' }
+    )
+    if (confirmed) {
+        router.delete(`/admin/blog/${id}`)
     }
 }
 
 const toggleStatus = (id: number) => {
     const post = blogPosts.value.find(p => p.id === id)
     if (post) {
-        post.status = post.status === 'published' ? 'draft' : 'published'
+        const newStatus = post.status === 'published' ? 'draft' : 'published'
+        router.patch(`/admin/blog/${id}/status`, { status: newStatus }, {
+            preserveScroll: true
+        })
     }
 }
 
@@ -84,14 +96,16 @@ const filteredPosts = computed(() => {
             <!-- Create Post Modal Overlay -->
             <div 
                 v-if="isCreateModalOpen"
-                class="fixed inset-0 z-50 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in-up"
+                class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-scale-in"
             >
-                <div class="glass-card p-6 flex flex-col gap-5 w-full max-w-lg bg-white dark:bg-solar-bg-dark border border-solar-primary/15 rounded-2xl max-h-[90vh] overflow-y-auto">
-                    <div class="flex items-center justify-between">
-                        <h3 class="font-extrabold text-base text-slate-800 dark:text-white flex items-center gap-2">
-                            <Plus class="h-5 w-5 text-solar-primary" />
-                            <span>Write New Article</span>
-                        </h3>
+                <div class="relative w-full max-w-lg bg-white/95 dark:bg-[#0B0F19]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-3xl shadow-[0_0_60px_-15px_rgba(99,102,241,0.4)] overflow-hidden flex flex-col gap-5 max-h-[90vh]">
+                    <div class="h-1.5 bg-gradient-to-r from-indigo-600 via-purple-500 to-pink-500 w-full"></div>
+                    <div class="px-6 pt-2 pb-6 overflow-y-auto">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-black text-xl text-slate-800 dark:text-white flex items-center gap-2">
+                                <Plus class="h-5 w-5 text-indigo-500" />
+                                <span>Write New Article</span>
+                            </h3>
                         <button @click="isCreateModalOpen = false" class="p-1 rounded-lg text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5">
                             <X class="h-4 w-4" />
                         </button>
@@ -101,26 +115,26 @@ const filteredPosts = computed(() => {
 
                     <form @submit.prevent="handleCreatePost" class="flex flex-col gap-4">
                         <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Article Title</label>
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Article Title</label>
                             <input 
                                 v-model="newTitle"
                                 type="text"
                                 required
                                 placeholder="e.g. 5 Maintenance Mistakes Installers Avoid"
-                                class="h-10 px-3 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/20 border border-slate-200 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-solar-primary transition-all text-slate-800 dark:text-white"
+                                class="h-11 px-4 rounded-xl bg-slate-50/80 dark:bg-white/5 border border-slate-200/50 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-slate-800 dark:text-white"
                             />
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Author Name</label>
-                                <input v-model="newAuthor" type="text" required class="h-10 px-3 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/20 border border-slate-200 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-solar-primary transition-all text-slate-800 dark:text-white" />
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Author Name</label>
+                                <input v-model="newAuthor" type="text" required class="h-11 px-4 rounded-xl bg-slate-50/80 dark:bg-white/5 border border-slate-200/50 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-slate-800 dark:text-white" />
                             </div>
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Category</label>
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</label>
                                 <select 
                                     v-model="newCategory"
-                                    class="h-10 px-3 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/20 border border-slate-200 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-solar-primary transition-all text-slate-800 dark:text-white"
+                                    class="h-11 px-4 rounded-xl bg-slate-50/80 dark:bg-white/5 border border-slate-200/50 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-slate-800 dark:text-white"
                                 >
                                     <option value="News">News / Trends</option>
                                     <option value="Guide">Installer Guide</option>
@@ -130,31 +144,31 @@ const filteredPosts = computed(() => {
                             </div>
                         </div>
 
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Featured Image Cover</label>
-                            <div class="flex items-center justify-center border border-dashed border-slate-200 dark:border-white/5 h-20 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/20 cursor-pointer hover:bg-slate-100 dark:hover:bg-solar-primary-dark/30 transition-all text-slate-450">
+                        <div class="flex flex-col gap-1.5 mt-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Featured Image Cover</label>
+                            <div class="flex items-center justify-center border border-dashed border-indigo-500/30 h-24 rounded-2xl bg-indigo-50/50 dark:bg-indigo-500/5 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all text-indigo-500 dark:text-indigo-400">
                                 <Upload class="h-5 w-5 mr-2" />
                                 <span class="text-xs font-bold">Upload Header File (.png or .jpg)</span>
                             </div>
                         </div>
 
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Post Body / Content</label>
+                        <div class="flex flex-col gap-1.5 mt-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Post Body / Content</label>
                             <textarea 
                                 v-model="newContent"
                                 rows="4"
                                 placeholder="Write the markdown-supported content body here..."
-                                class="p-3 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/20 border border-slate-200 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-solar-primary transition-all text-slate-800 dark:text-white"
+                                class="p-4 rounded-xl bg-slate-50/80 dark:bg-white/5 border border-slate-200/50 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-slate-800 dark:text-white resize-none"
                             ></textarea>
                         </div>
 
-                        <div class="flex items-center justify-between mt-1">
-                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Publish Immediately?</label>
+                        <div class="flex items-center justify-between mt-4 p-4 rounded-2xl border border-slate-200/50 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
+                            <label class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Publish Immediately?</label>
                             <button 
                                 type="button"
                                 @click="isDraft = !isDraft"
-                                class="px-4 h-9 rounded-xl text-xs font-bold transition-all border"
-                                :class="!isDraft ? 'bg-solar-success text-white border-solar-success/20' : 'bg-slate-100 dark:bg-white/5 text-slate-500 border-transparent'"
+                                class="px-5 h-9 rounded-xl text-xs font-bold transition-all border"
+                                :class="!isDraft ? 'bg-emerald-500 text-white border-emerald-500/20 shadow-[0_0_15px_-3px_rgba(16,185,129,0.4)]' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 border-transparent'"
                             >
                                 {{ !isDraft ? 'Yes, Publish' : 'No, Keep Draft' }}
                             </button>
@@ -162,27 +176,28 @@ const filteredPosts = computed(() => {
 
                         <button 
                             type="submit"
-                            class="h-11 w-full rounded-xl bg-solar-primary hover:bg-solar-primary-active text-white text-xs font-bold shadow-solar hover:shadow-solar-glow transition-all duration-300 btn-glow mt-2"
+                            class="h-12 w-full mt-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-500 hover:from-indigo-700 hover:to-purple-600 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all duration-300"
                         >
                             Create Editorial Post
                         </button>
                     </form>
+                    </div>
                 </div>
             </div>
 
             <div class="flex flex-col gap-1">
-                <div class="inline-flex items-center gap-1.5 self-start px-2 py-0.5 rounded bg-solar-primary-light dark:bg-solar-primary-dark text-solar-primary dark:text-solar-primary-accent font-bold text-[9px] uppercase tracking-wider">
+                <div class="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 font-extrabold text-[9px] uppercase tracking-widest border border-purple-500/20 shadow-sm animate-pulse-slow">
                     <Sparkles class="h-3 w-3" />
                     <span>Editorial Node</span>
                 </div>
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-1">
                     <div>
-                        <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">CMS Articles & Knowledgebase</h2>
-                        <p class="text-xs text-slate-450 mt-0.5">Author training guides, dispatch advisories, and release news articles directly to installation apps.</p>
+                        <h2 class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-500 dark:from-indigo-400 dark:to-purple-400 tracking-tight">CMS Articles & Knowledgebase</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">Author training guides, dispatch advisories, and release news articles directly to installation apps.</p>
                     </div>
                     <button 
                         @click="isCreateModalOpen = true"
-                        class="px-5 py-2.5 rounded-xl bg-solar-primary hover:bg-solar-primary-active text-white text-xs font-bold shadow-solar hover:shadow-solar-glow transition-all duration-300 btn-glow uppercase tracking-wider flex items-center gap-1.5"
+                        class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-500 hover:from-indigo-700 hover:to-purple-600 text-white text-[11px] font-black shadow-[0_0_20px_-5px_rgba(99,102,241,0.4)] transition-all duration-300 uppercase tracking-widest flex items-center gap-1.5"
                     >
                         <Plus class="h-4 w-4" />
                         <span>Create Post</span>
@@ -192,20 +207,20 @@ const filteredPosts = computed(() => {
 
             <!-- KPI Row (3 cards) -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div class="glass-card p-5 bg-white dark:bg-solar-bg-dark/40 border border-solar-primary/10 dark:border-white/5 rounded-xl">
-                    <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Total Articles</span>
-                    <h3 class="text-2xl font-extrabold text-slate-850 dark:text-white mt-1.5">{{ totalPosts }} Posts</h3>
-                    <p class="text-[9px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Published: {{ publishedCount }} | Drafts: {{ draftCount }}</p>
+                <div class="glass-card p-5 bg-white/60 dark:bg-[#0B0F19]/60 backdrop-blur-md border border-slate-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+                    <span class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Total Articles</span>
+                    <h3 class="text-3xl font-black text-slate-800 dark:text-white mt-1">{{ totalPosts }} <span class="text-lg text-slate-400 font-bold">Posts</span></h3>
+                    <p class="text-[10px] text-slate-500 mt-2 uppercase tracking-wider font-bold">Published: {{ publishedCount }} | Drafts: {{ draftCount }}</p>
                 </div>
-                <div class="glass-card p-5 bg-white dark:bg-solar-bg-dark/40 border border-solar-primary/10 dark:border-white/5 rounded-xl">
-                    <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider font-bold">CMS Views Metric</span>
-                    <h3 class="text-2xl font-extrabold text-solar-success mt-1.5">8.4k Total</h3>
-                    <p class="text-[9px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Average: 1.6k per post</p>
+                <div class="glass-card p-5 bg-white/60 dark:bg-[#0B0F19]/60 backdrop-blur-md border border-slate-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+                    <span class="text-[9px] text-slate-400 font-black uppercase tracking-widest">CMS Views Metric</span>
+                    <h3 class="text-3xl font-black text-emerald-500 mt-1">8.4k <span class="text-lg text-emerald-500/70 font-bold">Total</span></h3>
+                    <p class="text-[10px] text-slate-500 mt-2 uppercase tracking-wider font-bold">Average: 1.6k per post</p>
                 </div>
-                <div class="glass-card p-5 bg-white dark:bg-solar-bg-dark/40 border border-solar-primary/10 dark:border-white/5 rounded-xl">
-                    <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Active Editors</span>
-                    <h3 class="text-2xl font-extrabold text-solar-primary dark:text-solar-primary-accent mt-1.5">4 Authors</h3>
-                    <p class="text-[9px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Verification compliance met</p>
+                <div class="glass-card p-5 bg-white/60 dark:bg-[#0B0F19]/60 backdrop-blur-md border border-slate-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+                    <span class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Active Editors</span>
+                    <h3 class="text-3xl font-black text-indigo-500 dark:text-indigo-400 mt-1">4 <span class="text-lg text-indigo-500/70 font-bold">Authors</span></h3>
+                    <p class="text-[10px] text-slate-500 mt-2 uppercase tracking-wider font-bold">Verification compliance met</p>
                 </div>
             </div>
 
@@ -216,15 +231,15 @@ const filteredPosts = computed(() => {
                     v-model="searchQuery"
                     type="text" 
                     placeholder="Search posts by title..."
-                    class="w-full h-11 pl-10 pr-4 rounded-xl bg-white dark:bg-solar-bg-dark/40 border border-solar-primary/10 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-solar-primary transition-all text-slate-850 dark:text-white shadow-sm"
+                    class="w-full h-11 pl-10 pr-4 rounded-xl bg-white/80 dark:bg-[#0B0F19]/60 backdrop-blur-md border border-slate-200 dark:border-white/5 text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-slate-800 dark:text-white shadow-sm"
                 />
             </div>
 
             <!-- Blog Posts CMS Table -->
-            <div class="glass-card overflow-hidden bg-white dark:bg-solar-bg-dark/40 border border-solar-primary/10 dark:border-white/5 rounded-2xl shadow-solar">
+            <div class="glass-card overflow-hidden bg-white/60 dark:bg-[#0B0F19]/70 backdrop-blur-2xl border border-indigo-500/20 dark:border-white/5 rounded-3xl shadow-[0_0_40px_-15px_rgba(99,102,241,0.2)]">
                 <table class="w-full text-sm">
                     <thead>
-                        <tr class="bg-solar-primary/5 border-b border-solar-primary/10 text-left text-slate-850 dark:text-white font-bold">
+                        <tr class="bg-indigo-500/5 border-b border-indigo-500/10 text-left text-slate-850 dark:text-white font-black">
                             <th class="p-4">Article Title</th>
                             <th class="p-4">Author</th>
                             <th class="p-4">Category</th>
@@ -234,39 +249,39 @@ const filteredPosts = computed(() => {
                             <th class="p-4 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-solar-primary/5 text-xs text-slate-650 dark:text-slate-350">
+                    <tbody class="divide-y divide-indigo-500/5 text-xs text-slate-650 dark:text-slate-350">
                         <tr v-if="filteredPosts.length === 0">
-                            <td colspan="7" class="p-8 text-center text-slate-400">
+                            <td colspan="7" class="p-8 text-center text-slate-400 font-bold">
                                 No matching blog posts found.
                             </td>
                         </tr>
-                        <tr v-for="post in filteredPosts" :key="post.id" class="hover:bg-slate-50/50 dark:hover:bg-solar-primary-dark/10 transition-all">
+                        <tr v-for="post in filteredPosts" :key="post.id" class="hover:bg-slate-50/50 dark:hover:bg-indigo-900/10 transition-all">
                             <td class="p-4 font-bold text-slate-850 dark:text-white truncate max-w-[220px]" :title="post.title">
                                 {{ post.title }}
                             </td>
                             <td class="p-4 font-semibold">{{ post.author }}</td>
-                            <td class="p-4 uppercase tracking-wider font-semibold text-[9px] text-solar-primary dark:text-solar-primary-accent">
+                            <td class="p-4 uppercase tracking-wider font-bold text-[9px] text-indigo-500 dark:text-indigo-400">
                                 {{ post.category }}
                             </td>
-                            <td class="p-4 font-mono">{{ post.views }} views</td>
+                            <td class="p-4 font-mono font-bold">{{ post.views }} <span class="text-slate-400">views</span></td>
                             <td class="p-4 font-semibold text-slate-450">{{ post.date }}</td>
                             <td class="p-4">
                                 <button 
                                     @click="toggleStatus(post.id)"
-                                    class="px-2.5 py-0.5 rounded-full font-bold text-[8px] uppercase tracking-wider hover:scale-105 transition-all"
-                                    :class="post.status === 'published' ? 'bg-solar-success/15 text-solar-success' : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'"
+                                    class="px-2.5 py-0.5 rounded-full font-bold text-[8px] uppercase tracking-wider hover:scale-105 transition-all shadow-sm"
+                                    :class="post.status === 'published' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'"
                                 >
                                     {{ post.status }}
                                 </button>
                             </td>
                             <td class="p-4 text-right">
                                 <div class="flex items-center gap-1.5 justify-end">
-                                    <button class="p-2 rounded-lg border border-solar-primary/10 text-solar-primary hover:bg-solar-primary/10" title="Edit Article">
+                                    <button class="p-2 rounded-lg border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 transition-all" title="Edit Article">
                                         <Edit class="h-3.5 w-3.5" />
                                     </button>
                                     <button 
                                         @click="handleDeletePost(post.id)"
-                                        class="p-2.5 rounded-lg border border-solar-danger/10 text-solar-danger hover:bg-solar-danger/10"
+                                        class="p-2.5 rounded-lg border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-all"
                                         title="Delete Post"
                                     >
                                         <Trash2 class="h-3.5 w-3.5" />
@@ -281,3 +296,19 @@ const filteredPosts = computed(() => {
         </div>
     </DashboardLayout>
 </template>
+
+<style scoped>
+@keyframes scale-in {
+    from {
+        transform: scale(0.92);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+.animate-scale-in {
+    animation: scale-in 0.3s ease-out;
+}
+</style>

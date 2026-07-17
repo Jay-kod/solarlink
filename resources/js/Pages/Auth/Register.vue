@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { 
     Sun, Moon, ArrowRight, UserCheck, Wrench, Store, 
-    Sparkles, CheckCircle2, ChevronRight, Upload, MapPin, Building
+    Sparkles, CheckCircle2, ChevronRight, Upload, MapPin, Building,
+    Eye, EyeOff
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -12,7 +13,8 @@ const props = defineProps<{
 }>()
 
 const { isDark, toggleDarkMode } = useDarkMode()
-const step = ref<number>(1)
+const isRolePreselected = computed(() => Boolean(props.role))
+const step = ref<number>(props.role ? 2 : 1)
 const selectedRole = ref<'customer' | 'technician' | 'vendor'>(props.role || 'customer')
 
 // Form using Inertia useForm
@@ -20,6 +22,7 @@ const form = useForm({
     name: '',
     email: '',
     password: '',
+    password_confirmation: '',
     role: (props.role || 'customer') as 'customer' | 'technician' | 'vendor',
     
     // Technician specific details
@@ -32,6 +35,55 @@ const form = useForm({
     store_name: '',
     company_address: '',
     vat_number: '',
+})
+
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
+
+const passwordStrength = computed(() => {
+    const password = form.password || ''
+
+    if (!password) {
+        return {
+            label: 'Empty',
+            width: '0%',
+            barClass: 'bg-slate-200 dark:bg-white/10',
+            textClass: 'text-slate-400'
+        }
+    }
+
+    let score = 0
+    if (password.length >= 8) score += 1
+    if (password.length >= 12) score += 1
+    if (/[A-Z]/.test(password)) score += 1
+    if (/[a-z]/.test(password)) score += 1
+    if (/[0-9]/.test(password)) score += 1
+    if (/[^A-Za-z0-9]/.test(password)) score += 1
+
+    if (score <= 2) {
+        return {
+            label: 'Weak',
+            width: '33%',
+            barClass: 'bg-red-500',
+            textClass: 'text-red-500'
+        }
+    }
+
+    if (score <= 4) {
+        return {
+            label: 'Moderate',
+            width: '66%',
+            barClass: 'bg-amber-500',
+            textClass: 'text-amber-500'
+        }
+    }
+
+    return {
+        label: 'Strong',
+        width: '100%',
+        barClass: 'bg-emerald-500',
+        textClass: 'text-emerald-500'
+    }
 })
 
 // Keep form role in sync with selectedRole tab
@@ -58,7 +110,7 @@ const submitForm = () => {
     form.post('/register', {
         onError: () => {
             // If validation fails on step 2, keep the user on step 2
-            if (form.errors.name || form.errors.email || form.errors.password) {
+            if (form.errors.name || form.errors.email || form.errors.password || form.errors.password_confirmation) {
                 step.value = 2
             }
         }
@@ -76,7 +128,7 @@ const handleFileUpload = (e: Event) => {
 <template>
     <Head title="SolarLink — Register Account" />
 
-    <div class="h-screen relative flex items-center justify-center p-4 sm:p-6 bg-slate-50 dark:bg-solar-bg-dark transition-colors duration-300 overflow-hidden">
+    <div class="relative flex min-h-dvh items-start md:items-center justify-center px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10 bg-slate-50 dark:bg-solar-bg-dark transition-colors duration-300 overflow-x-hidden overflow-y-auto">
         <!-- Background decorative glows -->
         <div class="absolute top-10 left-10 w-80 h-80 glow-purple rounded-full blur-3xl pointer-events-none -z-10 animate-pulse-slow"></div>
         <div class="absolute bottom-10 right-10 w-96 h-96 glow-purple rounded-full blur-3xl pointer-events-none -z-10"></div>
@@ -90,7 +142,7 @@ const handleFileUpload = (e: Event) => {
             <Moon v-else class="h-5 w-5" />
         </button>
 
-        <div class="w-full max-w-[620px] glass-card p-6 sm:p-8 text-left relative overflow-hidden">
+        <div class="w-full max-w-[720px] lg:max-w-[900px] glass-card p-5 sm:p-8 text-left relative overflow-hidden rounded-2xl md:rounded-3xl">
             <!-- Simulated Loading Overlay -->
             <div 
                 v-if="form.processing"
@@ -105,7 +157,7 @@ const handleFileUpload = (e: Event) => {
             </div>
 
             <!-- Header & Steps tracker -->
-            <div class="flex items-center justify-between border-b border-solar-primary/10 dark:border-white/5 pb-4 mb-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-solar-primary/10 dark:border-white/5 pb-4 mb-6">
                 <Link href="/" class="flex items-center gap-2 group">
                     <div class="h-8 w-8 rounded-lg bg-gradient-to-tr from-solar-primary to-solar-primary-accent flex items-center justify-center">
                         <span class="text-white font-extrabold text-sm">SL</span>
@@ -120,7 +172,7 @@ const handleFileUpload = (e: Event) => {
             <form @submit.prevent="handleNextStep" class="flex flex-col gap-6">
                 
                 <!-- STEP 1: Select Role -->
-                <div v-if="step === 1" class="flex flex-col gap-5 animate-fade-in-up">
+                <div v-if="!isRolePreselected && step === 1" class="flex flex-col gap-5 animate-fade-in-up">
                     <div>
                         <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white mb-1.5">Select Your Role</h2>
                         <p class="text-xs text-slate-500">Choose the type of account you want to register.</p>
@@ -215,15 +267,65 @@ const handleFileUpload = (e: Event) => {
 
                     <div class="flex flex-col gap-1.5">
                         <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Secure Access Password</label>
-                        <input 
-                            v-model="form.password"
-                            type="password" 
-                            required 
-                            placeholder="At least 8 characters"
-                            class="h-11 px-4 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-sm focus:outline-none focus:border-solar-primary transition-all duration-300"
-                            :class="{'border-red-500 focus:border-red-500': form.errors.password}"
-                        />
+                        <div class="relative">
+                            <input 
+                                v-model="form.password"
+                                :type="showPassword ? 'text' : 'password'"
+                                required 
+                                placeholder="At least 8 characters"
+                                class="h-11 w-full px-4 pr-12 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-sm focus:outline-none focus:border-solar-primary transition-all duration-300"
+                                :class="{'border-red-500 focus:border-red-500': form.errors.password}"
+                            />
+                            <button
+                                type="button"
+                                @click="showPassword = !showPassword"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-solar-primary dark:hover:text-solar-primary-accent transition-colors duration-200"
+                                tabindex="-1"
+                                :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                            >
+                                <EyeOff v-if="showPassword" class="h-4.5 w-4.5" />
+                                <Eye v-else class="h-4.5 w-4.5" />
+                            </button>
+                        </div>
+                        <div class="space-y-2 mt-1">
+                            <div class="h-2 overflow-hidden rounded-full bg-slate-200/80 dark:bg-white/10">
+                                <div
+                                    class="h-full rounded-full transition-all duration-300"
+                                    :class="passwordStrength.barClass"
+                                    :style="{ width: passwordStrength.width }"
+                                ></div>
+                            </div>
+                            <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+                                <span class="text-slate-400">Password Strength</span>
+                                <span :class="passwordStrength.textClass">{{ passwordStrength.label }}</span>
+                            </div>
+                        </div>
                         <span v-if="form.errors.password" class="text-xs text-red-500 font-medium mt-0.5">{{ form.errors.password }}</span>
+                    </div>
+
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Confirm Password</label>
+                        <div class="relative">
+                            <input 
+                                v-model="form.password_confirmation"
+                                :type="showConfirmPassword ? 'text' : 'password'"
+                                required 
+                                placeholder="Re-enter your password"
+                                class="h-11 w-full px-4 pr-12 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-sm focus:outline-none focus:border-solar-primary transition-all duration-300"
+                                :class="{'border-red-500 focus:border-red-500': form.errors.password_confirmation}"
+                            />
+                            <button
+                                type="button"
+                                @click="showConfirmPassword = !showConfirmPassword"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-solar-primary dark:hover:text-solar-primary-accent transition-colors duration-200"
+                                tabindex="-1"
+                                :aria-label="showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'"
+                            >
+                                <EyeOff v-if="showConfirmPassword" class="h-4.5 w-4.5" />
+                                <Eye v-else class="h-4.5 w-4.5" />
+                            </button>
+                        </div>
+                        <span v-if="form.errors.password_confirmation" class="text-xs text-red-500 font-medium mt-0.5">{{ form.errors.password_confirmation }}</span>
                     </div>
                 </div>
 

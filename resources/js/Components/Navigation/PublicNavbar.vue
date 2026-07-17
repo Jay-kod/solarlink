@@ -21,12 +21,26 @@ const getDashboardUrl = (role: string) => {
     return role === 'customer' ? '/user' : '/' + role
 }
 
+const getLogoutUrl = (role: string) => {
+    switch (role) {
+        case 'technician':
+            return '/technician/logout'
+        case 'vendor':
+            return '/vendor/logout'
+        case 'admin':
+            return '/admin/logout'
+        default:
+            return '/user/logout'
+    }
+}
+
 const navLinks = [
-    { name: 'Features', href: '/features' },
-    { name: 'Pricing', href: '/pricing' },
-    { name: 'About Us', href: '/about' },
-    { name: 'FAQ', href: '/faq' },
-    { name: 'Contact', href: '/contact' }
+    { name: 'Home', href: '/', component: 'Public/Landing' },
+    { name: 'Features', href: '/features', component: 'Public/Features' },
+    { name: 'Pricing', href: '/pricing', component: 'Public/Pricing' },
+    { name: 'About Us', href: '/about', component: 'Public/About' },
+    { name: 'FAQ', href: '/faq', component: 'Public/FAQ' },
+    { name: 'Contact', href: '/contact', component: 'Public/Contact' }
 ]
 
 const roles = [
@@ -44,9 +58,7 @@ const roles = [
                 <!-- Logo -->
                 <div class="flex-shrink-0 flex items-center">
                     <Link href="/" class="flex items-center gap-2 group">
-                        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-solar-primary to-solar-primary-accent flex items-center justify-center shadow-solar-glow group-hover:scale-105 transition-transform duration-300">
-                            <span class="text-white font-extrabold text-xl tracking-tight">SL</span>
-                        </div>
+                        <img src="/images/logo.png" alt="SolarLink Logo" class="h-10 w-10 rounded-xl object-contain shadow-solar-glow group-hover:scale-105 transition-transform duration-300" />
                         <span class="font-bold text-2xl tracking-tight bg-gradient-to-r from-solar-primary to-solar-primary-accent bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">SolarLink</span>
                     </Link>
                 </div>
@@ -57,7 +69,12 @@ const roles = [
                         v-for="link in navLinks" 
                         :key="link.name" 
                         :href="link.href"
-                        class="text-slate-600 dark:text-slate-300 hover:text-solar-primary dark:hover:text-solar-primary-accent font-medium text-sm transition-colors"
+                        :class="[
+                            'font-medium text-sm transition-all duration-300 relative',
+                            page.component === link.component 
+                                ? 'text-solar-primary dark:text-solar-primary-accent font-bold' 
+                                : 'text-slate-600 dark:text-slate-300 hover:text-solar-primary dark:hover:text-solar-primary-accent'
+                        ]"
                     >
                         {{ link.name }}
                     </Link>
@@ -93,7 +110,7 @@ const roles = [
                             <span>dashboard</span>
                         </Link>
                         <Link 
-                            href="/logout"
+                            :href="getLogoutUrl(authUser.role)"
                             method="post"
                             as="button"
                             class="flex items-center gap-2 px-4 h-11 rounded-xl bg-slate-100 dark:bg-solar-primary-dark/50 text-slate-700 dark:text-slate-200 font-semibold text-sm hover:bg-red-500/10 hover:text-red-500 transition-all duration-300"
@@ -144,7 +161,12 @@ const roles = [
                     v-for="link in navLinks" 
                     :key="link.name" 
                     :href="link.href"
-                    class="text-slate-700 dark:text-slate-200 hover:text-solar-primary font-medium transition-colors text-lg"
+                    :class="[
+                        'font-medium transition-colors text-lg px-2 py-1 rounded-lg',
+                        page.component === link.component
+                            ? 'text-solar-primary dark:text-solar-primary-accent bg-solar-primary/5 dark:bg-solar-primary-accent/10 font-bold'
+                            : 'text-slate-700 dark:text-slate-200 hover:text-solar-primary hover:bg-slate-50 dark:hover:bg-white/5'
+                    ]"
                     @click="isMobileMenuOpen = false"
                 >
                     {{ link.name }}
@@ -169,7 +191,7 @@ const roles = [
                             <span>dashboard</span>
                         </Link>
                         <Link 
-                            href="/logout"
+                            :href="getLogoutUrl(authUser.role)"
                             method="post"
                             as="button"
                             class="flex items-center justify-center w-full h-11 rounded-xl bg-slate-200 dark:bg-solar-primary-dark text-slate-800 dark:text-white font-bold text-sm hover:bg-red-500/10 hover:text-red-500 transition-all duration-300"

@@ -2,33 +2,33 @@
 import { ref, computed } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
-import { mockProducts, Product } from '@/data/products'
+import { productCatalog, Product } from '@/data/products'
 import { Plus, Sparkles, Trash2, Edit, X, Upload, Search, AlertCircle } from 'lucide-vue-next'
 
 // Initial list of 6 products
 const productsList = ref<Product[]>([
     {
-        ...mockProducts[0],
+        ...productCatalog[0],
         id: 1,
         stock: 65 // green
     },
     {
-        ...mockProducts[1],
+        ...productCatalog[1],
         id: 2,
         stock: 12 // yellow
     },
     {
-        ...mockProducts[2],
+        ...productCatalog[2],
         id: 3,
         stock: 25 // yellow
     },
     {
-        ...mockProducts[3],
+        ...productCatalog[3],
         id: 4,
         stock: 5 // red
     },
     {
-        ...mockProducts[4],
+        ...productCatalog[4],
         id: 5,
         stock: 120 // green
     },

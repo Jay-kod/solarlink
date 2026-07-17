@@ -17,7 +17,14 @@ class AuthenticatedSessionController extends Controller
 {
     public function create(Request $request): Response
     {
-        $this->ensureDemoUsersExist();
+        // Only seed demo data in local dev when the database is empty
+        try {
+            if (app()->environment('local') && \App\Models\User::count() === 0) {
+                $this->ensureDemoUsersExist();
+            }
+        } catch (\Exception $e) {
+            // Database is likely offline or unconfigured. Ignore so the UI can still render.
+        }
 
         $role = 'customer';
         $path = $request->path();
@@ -41,13 +48,33 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
-        $this->ensureDemoUsersExist();
+        // Only seed demo data in local dev when the database is empty
+        try {
+            if (app()->environment('local') && \App\Models\User::count() === 0) {
+                $this->ensureDemoUsersExist();
+            }
+        } catch (\Exception $e) {
+            // Ignore DB offline exception
+        }
 
         $request->authenticate();
 
+        // SECURITY: Verify the authenticated user's role matches the portal they logged in from.
+        $user = Auth::user();
+        $submittedRole = $request->input('role');
+
+        if ($submittedRole && $user->role !== $submittedRole) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'email' => 'These credentials do not match a ' . $submittedRole . ' account.',
+            ]);
+        }
+
         $request->session()->regenerate();
 
-        $user = Auth::user();
         $redirectUrl = $user->role === 'customer' ? '/user' : '/' . $user->role;
         return redirect()->intended($redirectUrl);
     }

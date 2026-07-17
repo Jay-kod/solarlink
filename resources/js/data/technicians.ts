@@ -14,7 +14,7 @@ export interface Technician {
     eta: string;
 }
 
-export const mockTechnicians: Technician[] = [
+export const technicianDirectory: Technician[] = [
     {
         id: 1,
         name: 'Marcus Vance',

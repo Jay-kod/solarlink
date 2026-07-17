@@ -14,7 +14,7 @@ export interface Product {
     isFeatured?: boolean;
 }
 
-export const mockProducts: Product[] = [
+export const productCatalog: Product[] = [
     {
         id: 1,
         name: 'AeroVolt 450W Monocrystalline Panel',

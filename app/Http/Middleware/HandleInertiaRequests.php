@@ -29,13 +29,50 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if ($request->is('preview/*')) {
+            return [
+                ...parent::share($request),
+                'auth' => [
+                    'user' => null,
+                ],
+                'cartCount' => 0,
+                'wishlistCount' => 0,
+                'unreadNotifications' => 0,
+                'notifications' => [],
+            ];
+        }
+
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
             ],
-            'cartCount' => $request->user() ? (int)$request->user()->cartItems()->sum('quantity') : 0,
-            'wishlistCount' => $request->user() ? (int)$request->user()->wishlistItems()->count() : 0,
+            'cartCount' => fn () => $user ? (int) $user->cartItems()->sum('quantity') : 0,
+            'wishlistCount' => fn () => $user ? (int) $user->wishlistItems()->count() : 0,
+            'unreadNotifications' => fn () => $user
+                ? (int) $user->serviceNotifications()->whereNull('read_at')->count()
+                : 0,
+            'notifications' => fn () => $user
+                ? $user->serviceNotifications()
+                    ->latest()
+                    ->limit(5)
+                    ->get()
+                    ->map(function ($notification) {
+                        return [
+                            'id' => $notification->id,
+                            'title' => $notification->title,
+                            'description' => $notification->body,
+                            'timestamp' => $notification->created_at?->diffForHumans() ?? '',
+                            'type' => $notification->type,
+                            'read' => $notification->read_at !== null,
+                            'link' => $notification->link,
+                        ];
+                    })
+                    ->values()
+                    ->toArray()
+                : [],
         ];
     }
 }

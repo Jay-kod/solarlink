@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
+import GlobalAlert from '@/Components/GlobalAlert.vue'
 import { useDarkMode } from '@/composables/useDarkMode'
-import { mockNotifications, type Notification } from '@/data/notifications'
+import { type Notification } from '@/data/notifications'
 import { 
     Sun, Moon, Menu, X, Bell, ChevronDown, User, LogOut, Settings, 
     UserCheck, Wrench, Store, ShieldAlert,
@@ -58,7 +59,9 @@ const roleMenuConfigs = {
             { name: 'Telemetry Dashboard', href: '/user', icon: Cpu },
             { name: 'Solar Appliances', href: '/user/appliances', icon: Cpu },
             { name: 'Technician Map', href: '/user/map', icon: Zap },
+            { name: 'Maintenance Tickets', href: '/user/maintenance', icon: ClipboardList },
             { name: 'Service Bookings', href: '/user/bookings', icon: Calendar },
+            { name: 'Procurement RFQs', href: '/user/procurement', icon: FolderKanban },
             { name: 'Marketplace', href: '/user/marketplace', icon: ShoppingBag },
             { name: 'Shopping Cart', href: '/user/cart', icon: ShoppingBag, badge: 'cartCount' },
             { name: 'My Wishlist', href: '/user/wishlist', icon: Heart, badge: 'wishlistCount' },
@@ -75,6 +78,7 @@ const roleMenuConfigs = {
         logoText: 'Tech Portal',
         links: [
             { name: 'Service Dashboard', href: '/technician', icon: Wrench },
+            { name: 'Maintenance Queue', href: '/technician/requests', icon: ClipboardList },
             { name: 'Incoming & Active Jobs', href: '/technician/jobs', icon: ClipboardList },
             { name: 'Calendar Scheduling', href: '/technician/calendar', icon: Calendar },
             { name: 'Revenue & Payouts', href: '/technician/earnings', icon: DollarSign },
@@ -91,6 +95,7 @@ const roleMenuConfigs = {
             { name: 'Inventory Dashboard', href: '/vendor', icon: Store },
             { name: 'Product Listings', href: '/vendor/products', icon: ShoppingBag },
             { name: 'Dispatched Orders', href: '/vendor/orders', icon: FolderKanban },
+            { name: 'Procurement RFQs', href: '/vendor/rfqs', icon: ClipboardList },
             { name: 'Store Branding', href: '/vendor/store', icon: Settings },
             { name: 'Service Chat', href: '/vendor/chat', icon: MessageSquare }
         ],
@@ -147,19 +152,31 @@ const displayAvatar = computed(() => {
 })
 
 const rolesSwitcher = [
-    { name: 'Customer App', href: '/user', icon: UserCheck, desc: 'Client portal & bookings', color: 'text-blue-500' },
-    { name: 'Technician Panel', href: '/technician', icon: Wrench, desc: 'Jobs & scheduling', color: 'text-emerald-500' },
-    { name: 'Vendor Portal', href: '/vendor', icon: Store, desc: 'Store & inventory', color: 'text-indigo-500' },
-    { name: 'Admin Dashboard', href: '/admin', icon: ShieldAlert, desc: 'Global settings & moderation', color: 'text-purple-500' }
+    { name: 'Customer App', href: route('user.dashboard'), icon: UserCheck, desc: 'Client portal & bookings', color: 'text-blue-500' },
+    { name: 'Technician Panel', href: route('technician.dashboard'), icon: Wrench, desc: 'Jobs & scheduling', color: 'text-emerald-500' },
+    { name: 'Vendor Portal', href: route('vendor.dashboard'), icon: Store, desc: 'Store & inventory', color: 'text-indigo-500' },
+    { name: 'Admin Dashboard', href: route('admin.dashboard'), icon: ShieldAlert, desc: 'Global settings & moderation', color: 'text-purple-500' }
 ]
 
 // Notifications
-const notificationsList = ref<Notification[]>([...mockNotifications])
+const notificationsList = ref<Notification[]>([])
+
+watch(
+    () => page.props.notifications as Notification[] | undefined,
+    (next) => {
+        notificationsList.value = Array.isArray(next) ? [...next] : []
+    },
+    { immediate: true }
+)
 
 const unreadCount = computed(() => notificationsList.value.filter(n => !n.read).length)
 
 const markAllRead = () => {
-    notificationsList.value.forEach(n => n.read = true)
+    notificationsList.value.forEach((notification) => {
+        if (!notification.read) {
+            markAsRead(notification.id)
+        }
+    })
 }
 
 const dismissNotification = (id: number) => {
@@ -167,8 +184,20 @@ const dismissNotification = (id: number) => {
 }
 
 const markAsRead = (id: number) => {
-    const n = notificationsList.value.find(n => n.id === id)
-    if (n) n.read = true
+    const notification = notificationsList.value.find((item) => item.id === id)
+    if (notification) {
+        notification.read = true
+    }
+
+    router.post(`/notifications/${id}/read`, {}, {
+        preserveScroll: true,
+        preserveState: true,
+        onError: () => {
+            if (notification) {
+                notification.read = false
+            }
+        },
+    })
 }
 
 const getNotifIcon = (type: string) => {
@@ -198,11 +227,24 @@ const getRoleBadgeClass = computed(() => {
         default: return 'bg-slate-500/10 text-slate-600'
     }
 })
+
+const getLogoutUrl = () => {
+    switch (props.role) {
+        case 'technician':
+            return route('technician.logout')
+        case 'vendor':
+            return route('vendor.logout')
+        case 'admin':
+            return '/admin/logout'
+        default:
+            return route('user.logout')
+    }
+}
 </script>
 
 <template>
     <div class="relative h-screen overflow-hidden flex bg-slate-50 dark:bg-[#0B0F19] text-slate-800 dark:text-slate-100 transition-colors duration-300">
-        
+        <GlobalAlert />
         <!-- Mobile Sidebar Overlay (Drawer) -->
         <div 
             v-if="isMobileSidebarOpen"
@@ -226,7 +268,8 @@ const getRoleBadgeClass = computed(() => {
                         </div>
                         <span class="font-bold text-xs text-white tracking-widest uppercase">{{ currentConfig.logoText }}</span>
                     </Link>
-                    <button 
+                    <button
+                        type="button"
                         @click="isMobileSidebarOpen = false"
                         class="p-2 rounded-lg text-slate-400 hover:bg-white/5"
                     >
@@ -261,19 +304,17 @@ const getRoleBadgeClass = computed(() => {
 
                 <!-- Mobile Sidebar Bottom: Profile + Logout -->
                 <div class="mt-auto border-t border-slate-800/50 p-4">
-                    <!-- Profile Card -->
-                    <Link href="/profile" @click="isMobileSidebarOpen = false" class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/5 transition-colors group mb-3">
+                    <Link :href="route('profile.edit')" @click="isMobileSidebarOpen = false" class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/5 transition-colors group mb-3">
                         <img :src="displayAvatar" :alt="displayName" class="h-9 w-9 rounded-lg object-cover ring-1 ring-white/10 shrink-0" />
                         <div class="flex-1 min-w-0">
                             <p class="font-semibold text-xs text-white truncate">{{ displayName }}</p>
                             <p class="text-[9px] text-slate-400 font-medium uppercase tracking-wider truncate">{{ displayRole }}</p>
                         </div>
                     </Link>
-                    <!-- Logout Button -->
                     <Link 
                         method="post" 
                         as="button" 
-                        href="/logout" 
+                        :href="getLogoutUrl()" 
                         class="w-full flex items-center justify-center gap-2 h-10 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-semibold text-xs transition-all duration-200"
                     >
                         <LogOut class="h-4 w-4" />
@@ -345,7 +386,7 @@ const getRoleBadgeClass = computed(() => {
                 <!-- Profile Card (expanded sidebar) -->
                 <Link 
                     v-if="isSidebarOpen" 
-                    href="/profile" 
+                    :href="route('profile.edit')" 
                     class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group mb-3"
                 >
                     <img :src="displayAvatar" :alt="displayName" class="h-9 w-9 rounded-lg object-cover ring-1 ring-slate-100 dark:ring-white/10 shrink-0" />
@@ -357,7 +398,7 @@ const getRoleBadgeClass = computed(() => {
                 <!-- Profile icon only (collapsed sidebar) -->
                 <Link 
                     v-else
-                    href="/profile"
+                    :href="route('profile.edit')"
                     class="flex items-center justify-center h-10 w-10 mx-auto rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 transition-colors mb-2"
                     title="Profile"
                 >
@@ -368,7 +409,7 @@ const getRoleBadgeClass = computed(() => {
                 <Link 
                     method="post" 
                     as="button" 
-                    href="/logout" 
+                    :href="getLogoutUrl()" 
                     class="w-full flex items-center justify-center gap-2 rounded-lg transition-all duration-200 font-semibold text-xs text-red-500 hover:text-white hover:bg-red-500"
                     :class="isSidebarOpen 
                         ? 'h-9 bg-red-500/5 dark:bg-red-500/10' 
@@ -530,7 +571,7 @@ const getRoleBadgeClass = computed(() => {
                                 <!-- Action Links -->
                                 <div class="p-1 flex flex-col gap-0.5">
                                     <Link 
-                                        href="/profile" 
+                                        :href="route('profile.edit')" 
                                         class="flex items-center gap-2.5 p-2 rounded-lg text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
                                     >
                                         <User class="h-4 w-4 text-slate-400" />
@@ -574,7 +615,7 @@ const getRoleBadgeClass = computed(() => {
                                     <Link 
                                         method="post" 
                                         as="button" 
-                                        href="/logout" 
+                                        :href="getLogoutUrl()" 
                                         class="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-semibold text-xs transition-colors"
                                     >
                                         <LogOut class="h-3.5 w-3.5" />
