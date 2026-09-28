@@ -23,6 +23,9 @@ class User extends Authenticatable
         'password',
         'role',
         'avatar',
+        'latitude',
+        'longitude',
+        'location',
     ];
 
     /**
@@ -31,6 +34,16 @@ class User extends Authenticatable
     public function technicianProfile()
     {
         return $this->hasOne(TechnicianProfile::class);
+    }
+
+    public function savedLocations()
+    {
+        return $this->hasMany(SavedLocation::class);
+    }
+
+    public function liveLocation()
+    {
+        return $this->hasOne(LiveLocation::class);
     }
 
     /**
@@ -84,6 +97,8 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'latitude' => 'float',
+        'longitude' => 'float',
     ];
 
     /**

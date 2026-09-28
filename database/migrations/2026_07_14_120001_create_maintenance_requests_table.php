@@ -13,13 +13,13 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('solar_appliance_id')->nullable()->constrained('solar_appliances')->nullOnDelete();
             $table->foreignId('technician_profile_id')->nullable()->constrained('technician_profiles')->nullOnDelete();
-            $table->string('issue_type');
+            $table->string('issue_type')->nullable();
             $table->enum('severity', ['low', 'medium', 'high', 'critical'])->default('medium');
             $table->text('description');
-            $table->string('location_address');
+            $table->string('location_address')->nullable();
             $table->decimal('latitude', 10, 7)->nullable();
             $table->decimal('longitude', 10, 7)->nullable();
-            $table->enum('status', ['open', 'assigned', 'in_progress', 'resolved', 'paid'])->default('open');
+            $table->enum('status', ['reported', 'pending', 'assigned', 'accepted', 'scheduled', 'in_progress', 'completed', 'cancelled'])->default('reported');
             $table->enum('payment_status', ['unpaid', 'paid'])->default('unpaid');
             $table->decimal('estimated_cost', 12, 2)->default(0);
             $table->timestamp('resolved_at')->nullable();

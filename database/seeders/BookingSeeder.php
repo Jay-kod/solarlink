@@ -14,69 +14,65 @@ class BookingSeeder extends Seeder
     public function run(): void
     {
         $customer = User::where('email', 'customer@solarlink.io')->first();
-        if (!$customer) {
+        $marcus = User::where('email', 'technician@solarlink.io')->first()?->technicianProfile;
+        $elena = User::where('email', 'elena@solarlink.io')->first()?->technicianProfile;
+
+        if (!$customer || !$marcus || !$elena) {
             return;
         }
 
-        // Get technicians by name
-        $marcus = User::where('name', 'Marcus Vance')->first();
-        $darnell = User::where('name', 'Darnell Washington')->first();
-        $elena = User::where('name', 'Elena Rostova')->first();
-        $kaito = User::where('name', 'Kaito Tanaka')->first();
-
         $bookings = [
             [
-                'id' => 101,
-                'user_id' => $customer->id,
-                'technician_profile_id' => $marcus ? $marcus->technicianProfile->id : null,
-                'service_type' => 'Annual Solar Health Audit',
-                'date' => '2026-06-02',
-                'time' => '10:00 AM',
+                'service_type' => '[Demo] Annual Solar Health Check',
+                'technician_profile_id' => $marcus->id,
+                'date' => now()->addDays(2)->toDateString(),
+                'time' => '09:30 AM',
                 'status' => 'active',
-                'cost' => 120.00,
+                'cost' => 145.00,
+                'payment_status' => 'unpaid',
                 'location' => '124 Oakwood Ave, San Francisco, CA',
-                'notes' => 'Inverter displaying a flashing red light and efficiency seems slightly reduced.'
+                'notes' => 'Demo booking: inspect the inverter and review recent generation output.',
             ],
             [
-                'id' => 102,
-                'user_id' => $customer->id,
-                'technician_profile_id' => $darnell ? $darnell->technicianProfile->id : null,
-                'service_type' => 'Battery Storage Installation',
-                'date' => '2026-05-30',
+                'service_type' => '[Demo] Battery Storage Installation',
+                'technician_profile_id' => $elena->id,
+                'date' => now()->addDays(5)->toDateString(),
                 'time' => '02:00 PM',
                 'status' => 'pending',
                 'cost' => 450.00,
+                'payment_status' => 'unpaid',
                 'location' => '588 Horizon Blvd, San Francisco, CA',
-                'notes' => 'Integrating 10kWh SolarLink Battery Wall with pre-existing solar system.'
+                'notes' => 'Demo booking: integrate a 10kWh home battery with the existing array.',
             ],
             [
-                'id' => 103,
-                'user_id' => $customer->id,
-                'technician_profile_id' => $elena ? $elena->technicianProfile->id : null,
-                'service_type' => 'Solar Panel Panel Cleaning',
-                'date' => '2026-05-24',
+                'service_type' => '[Demo] Solar Panel Cleaning',
+                'technician_profile_id' => $marcus->id,
+                'date' => now()->subDays(7)->toDateString(),
                 'time' => '09:00 AM',
                 'status' => 'completed',
                 'cost' => 85.00,
+                'payment_status' => 'paid',
                 'location' => '72 Pine St, San Francisco, CA',
-                'notes' => 'Heavy dust buildup on panels from recent dry winds.'
+                'notes' => 'Demo booking: remove dust buildup and check the panel surface.',
             ],
             [
-                'id' => 104,
-                'user_id' => $customer->id,
-                'technician_profile_id' => $kaito ? $kaito->technicianProfile->id : null,
-                'service_type' => 'Inverter Replacement',
-                'date' => '2026-05-15',
+                'service_type' => '[Demo] Inverter Replacement',
+                'technician_profile_id' => $elena->id,
+                'date' => now()->addDays(1)->toDateString(),
                 'time' => '11:30 AM',
                 'status' => 'cancelled',
                 'cost' => 220.00,
+                'payment_status' => 'unpaid',
                 'location' => '900 Sunset Way, San Francisco, CA',
-                'notes' => 'Cancel reason: Decided to upgrade entire system later.'
+                'notes' => 'Demo booking: cancelled before technician dispatch.',
             ]
         ];
 
         foreach ($bookings as $booking) {
-            Booking::updateOrCreate(['id' => $booking['id']], $booking);
+            Booking::firstOrCreate(
+                ['user_id' => $customer->id, 'service_type' => $booking['service_type']],
+                array_merge($booking, ['user_id' => $customer->id])
+            );
         }
     }
 }

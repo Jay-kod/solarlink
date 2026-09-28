@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\SolarApplianceController;
 use App\Http\Controllers\MapController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\MaintenanceRequestController;
 use App\Http\Controllers\TechnicianMaintenanceController;
 use App\Http\Controllers\ProcurementController;
 use App\Http\Controllers\VendorProcurementController;
+use App\Http\Controllers\VendorProductController;
 use App\Http\Controllers\ServiceNotificationController;
 use App\Models\Faq;
 use App\Models\PricingPlan;
@@ -89,7 +91,10 @@ Route::middleware(['auth', 'role:customer'])->group(function () {
 
     // Maintenance request routes
     Route::get('/user/maintenance', [MaintenanceRequestController::class, 'index'])->name('maintenance.index');
+    Route::get('/user/maintenance/create', [MaintenanceRequestController::class, 'create'])->name('maintenance.create');
+    Route::get('/user/maintenance/{maintenanceRequest}', [MaintenanceRequestController::class, 'show'])->name('maintenance.show');
     Route::post('/user/maintenance', [MaintenanceRequestController::class, 'store'])->name('maintenance.store');
+    Route::post('/user/maintenance/{maintenanceRequest}/cancel', [MaintenanceRequestController::class, 'cancel'])->name('maintenance.cancel');
     Route::post('/user/maintenance/{maintenanceRequest}/pay', [MaintenanceRequestController::class, 'pay'])->name('maintenance.pay');
 
     // Bookings routes
@@ -286,10 +291,12 @@ Route::middleware(['auth', 'role:technician'])->group(function () {
         return Inertia::render('Technician/Dashboard');
     })->name('technician.dashboard');
 
-    Route::get('/technician/jobs', function () {
-        return Inertia::render('Technician/Jobs/Active');
-    });
-
+    Route::get('/technician/jobs', [TechnicianMaintenanceController::class, 'index'])->name('technician.jobs.index');
+    Route::get('/technician/jobs/{maintenanceRequest}', [TechnicianMaintenanceController::class, 'show'])->name('technician.jobs.show');
+    Route::post('/technician/jobs/{maintenanceRequest}/accept', [TechnicianMaintenanceController::class, 'accept'])->name('technician.jobs.accept');
+    Route::post('/technician/jobs/{maintenanceRequest}/reject', [TechnicianMaintenanceController::class, 'reject'])->name('technician.jobs.reject');
+    Route::post('/technician/jobs/{maintenanceRequest}/start', [TechnicianMaintenanceController::class, 'start'])->name('technician.jobs.start');
+    Route::post('/technician/jobs/{maintenanceRequest}/complete', [TechnicianMaintenanceController::class, 'complete'])->name('technician.jobs.complete');
     Route::get('/technician/requests', [TechnicianMaintenanceController::class, 'index'])->name('technician.requests.index');
     Route::post('/technician/requests/{maintenanceRequest}/status', [TechnicianMaintenanceController::class, 'updateStatus'])->name('technician.requests.status');
 
@@ -310,9 +317,12 @@ Route::middleware(['auth', 'role:vendor'])->group(function () {
         return Inertia::render('Vendor/Dashboard');
     })->name('vendor.dashboard');
 
-    Route::get('/vendor/products', function () {
-        return Inertia::render('Vendor/Products/Index');
-    });
+    Route::get('/vendor/products', [VendorProductController::class, 'index'])->name('vendor.products.index');
+    Route::get('/vendor/products/create', [VendorProductController::class, 'create'])->name('vendor.products.create');
+    Route::post('/vendor/products', [VendorProductController::class, 'store'])->name('vendor.products.store');
+    Route::get('/vendor/products/{product}', [VendorProductController::class, 'show'])->name('vendor.products.show');
+    Route::put('/vendor/products/{product}', [VendorProductController::class, 'update'])->name('vendor.products.update');
+    Route::delete('/vendor/products/{product}', [VendorProductController::class, 'destroy'])->name('vendor.products.destroy');
 
     Route::get('/vendor/orders', function () {
         return Inertia::render('Vendor/Orders/Index');
@@ -457,6 +467,26 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
         return back()->with('success', 'Product status updated.');
     });
 
+    Route::get('/admin/maintenance', function () {
+        $requests = \App\Models\MaintenanceRequest::with(['user', 'appliance', 'technicianProfile.user'])
+            ->latest()
+            ->get();
+
+        return Inertia::render('Admin/Maintenance/Index', [
+            'requests' => $requests->map(fn ($request) => [
+                'id' => $request->id,
+                'customer' => $request->user?->name,
+                'faultType' => $request->fault_type ?? $request->issue_type ?? 'other',
+                'status' => $request->status,
+                'location' => $request->location ?? $request->location_address,
+                'technician' => $request->technicianProfile?->user?->name,
+                'appliance' => $request->appliance?->name,
+            ]),
+        ]);
+    })->name('admin.maintenance.index');
+
+    Route::post('/admin/maintenance/{maintenanceRequest}/assign', [MaintenanceRequestController::class, 'assignTechnician'])->name('admin.maintenance.assign');
+
     Route::get('/admin/blog', function () {
         $posts = \App\Models\BlogPost::orderBy('created_at', 'desc')->get()->map(function ($post) {
             return [
@@ -507,6 +537,14 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
 
 // Profile routes for all authenticated users
 Route::middleware('auth')->group(function () {
+    Route::get('/locations', [LocationController::class, 'index'])->name('locations.index');
+    Route::get('/locations/data', [LocationController::class, 'data'])->name('locations.data');
+    Route::post('/locations', [LocationController::class, 'store'])->name('locations.store');
+    Route::patch('/locations/{savedLocation}', [LocationController::class, 'update'])->name('locations.update');
+    Route::delete('/locations/{savedLocation}', [LocationController::class, 'destroy'])->name('locations.destroy');
+    Route::put('/locations/live', [LocationController::class, 'updateLive'])->name('locations.live.update');
+    Route::get('/admin/locations', [LocationController::class, 'index'])->middleware('role:admin')->name('admin.locations.index');
+
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])->name('profile.avatar.update');

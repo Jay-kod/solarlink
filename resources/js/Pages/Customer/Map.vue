@@ -117,7 +117,7 @@ const useMyLocation = () => {
                 
                 <!-- Map (Left) -->
                 <div class="lg:col-span-8">
-                    <MapPlaceholder :technicians="sortedTechnicians" @select-tech="handleTechSelect" />
+                    <MapPlaceholder :technicians="sortedTechnicians" :center="{ lat: filters.lat, lng: filters.lng }" @select-tech="handleTechSelect" />
                 </div>
 
                 <!-- Control / Booking details panel (Right) -->

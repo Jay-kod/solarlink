@@ -15,12 +15,24 @@ use Inertia\Response;
 
 class AuthenticatedSessionController extends Controller
 {
+    private const DEMO_ACCOUNT_EMAILS = [
+        'customer@solarlink.io',
+        'technician@solarlink.io',
+        'elena@solarlink.io',
+        'vendor@solarlink.io',
+        'admin@solarlink.io',
+    ];
+
     public function create(Request $request): Response
     {
-        // Only seed demo data in local dev when the database is empty
+        $demoAccounts = [];
         try {
-            if (app()->environment('local') && \App\Models\User::count() === 0) {
-                $this->ensureDemoUsersExist();
+            if (app()->environment('local')) {
+                $this->ensureLocalDemoAccountsExist();
+                $demoAccounts = \App\Models\User::query()
+                    ->whereIn('email', self::DEMO_ACCOUNT_EMAILS)
+                    ->get(['name', 'email', 'role'])
+                    ->toArray();
             }
         } catch (\Exception $e) {
             // Database is likely offline or unconfigured. Ignore so the UI can still render.
@@ -40,6 +52,7 @@ class AuthenticatedSessionController extends Controller
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
             'role' => $role,
+            'demoAccounts' => $demoAccounts,
         ]);
     }
 
@@ -48,11 +61,8 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
-        // Only seed demo data in local dev when the database is empty
         try {
-            if (app()->environment('local') && \App\Models\User::count() === 0) {
-                $this->ensureDemoUsersExist();
-            }
+            $this->ensureLocalDemoAccountsExist();
         } catch (\Exception $e) {
             // Ignore DB offline exception
         }
@@ -77,6 +87,21 @@ class AuthenticatedSessionController extends Controller
 
         $redirectUrl = $user->role === 'customer' ? '/user' : '/' . $user->role;
         return redirect()->intended($redirectUrl);
+    }
+
+    /**
+     * Create any missing local demo accounts without overwriting existing users.
+     */
+    private function ensureLocalDemoAccountsExist(): void
+    {
+        if (!app()->environment('local')) {
+            return;
+        }
+
+        $existingCount = \App\Models\User::whereIn('email', self::DEMO_ACCOUNT_EMAILS)->count();
+        if ($existingCount < count(self::DEMO_ACCOUNT_EMAILS)) {
+            $this->ensureDemoUsersExist();
+        }
     }
 
     /**

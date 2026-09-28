@@ -1,112 +1,63 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
-import { useDarkMode } from '@/composables/useDarkMode'
-import { 
-    Sun, Moon, ArrowRight, UserCheck, ShieldAlert, Wrench, Store, 
-    Sparkles, CheckCircle2, ChevronRight, Cpu, Lock, Terminal,
-    Eye, EyeOff
+import {
+    ArrowRight,
+    Eye,
+    EyeOff,
+    House,
+    LoaderCircle,
+    Moon,
+    ShieldCheck,
+    Store,
+    Sun,
+    Wrench,
 } from 'lucide-vue-next'
+import { useDarkMode } from '@/composables/useDarkMode'
+
+type Role = 'customer' | 'technician' | 'vendor' | 'admin'
+
+interface DemoAccount {
+    name: string
+    email: string
+    role: Role
+}
 
 const props = defineProps<{
     canResetPassword?: boolean
     status?: string
-    role?: 'customer' | 'technician' | 'vendor' | 'admin'
+    role?: Role
+    demoAccounts?: DemoAccount[]
 }>()
 
 const { isDark, toggleDarkMode } = useDarkMode()
 
-// Dynamic configuration of login portals
-const roleConfigs = {
-    customer: {
-        title: 'Homeowner Telemetry Portal',
-        subtitle: 'Clean Renewable Telemetry & Dispatches',
-        icon: Cpu,
-        themeColor: 'text-solar-primary bg-solar-primary-light dark:bg-solar-primary-dark/80 border-solar-primary/20',
-        ctaColor: 'bg-solar-primary hover:bg-solar-primary-active shadow-solar hover:shadow-solar-glow focus:ring-solar-primary/50',
-        glowColor: 'bg-solar-primary/10 dark:bg-solar-primary/5',
-        badge: 'Homeowner Operations',
-        email: 'customer@solarlink.io',
-        cardBg: 'from-solar-primary/10 via-solar-primary-dark/5 to-solar-primary-accent/10',
-        illustrationTitle: 'Active Telemetry Simulation',
-        illustrationDesc: 'Track live panel wattage outputs, optimize grid netting profiles, and dispatch local NABCEP certified technicians.',
-        features: [
-            { label: 'LiFePO4 Storage Buffer', val: '92.4% Charge' },
-            { label: 'CO2 Mitigation Index', val: '14.2 Tons' },
-            { label: 'Emergency Tech Service', val: '0 Pending' }
-        ],
-        gatewayLabel: 'Homeowner Link'
-    },
-    technician: {
-        title: 'Certified Engineer Panel',
-        subtitle: 'Field Operations & Dispatch Scheduler',
-        icon: Wrench,
-        themeColor: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500/20',
-        ctaColor: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20 hover:shadow-emerald-500/40 focus:ring-emerald-500/50',
-        glowColor: 'bg-emerald-500/10 dark:bg-emerald-500/5',
-        badge: 'Field Engineering',
-        email: 'technician@solarlink.io',
-        cardBg: 'from-emerald-500/10 via-teal-500/5 to-emerald-600/10',
-        illustrationTitle: 'Workforce Operations Ledger',
-        illustrationDesc: 'Manage emergency array repair tickets, schedule local calendar slots, and review direct customer payouts.',
-        features: [
-            { label: 'Certified Grid Rating', val: '4.98 Stars' },
-            { label: 'Active Grid Dispatches', val: '2 Assigned' },
-            { label: 'NABCEP Registration ID', val: 'SL-8842-US' }
-        ],
-        gatewayLabel: 'Technician Hub'
-    },
-    vendor: {
-        title: 'Wholesale Supplier Hub',
-        subtitle: 'OEM Direct Solar Parts Inventory',
-        icon: Store,
-        themeColor: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-500/20',
-        ctaColor: 'bg-indigo-650 hover:bg-indigo-700 shadow-indigo-500/20 hover:shadow-indigo-500/40 focus:ring-indigo-500/50',
-        glowColor: 'bg-indigo-500/10 dark:bg-indigo-500/5',
-        badge: 'Supply Chain Operations',
-        email: 'vendor@solarlink.io',
-        cardBg: 'from-indigo-500/10 via-blue-500/5 to-indigo-600/10',
-        illustrationTitle: 'OEM Wholesale Clearing',
-        illustrationDesc: 'Deploy inventory straight from clean factories, fulfill tracking requests, and customize direct storefront designs.',
-        features: [
-            { label: 'Factory Direct Catalog', val: '48 Active SKUs' },
-            { label: 'Fulfillment Handshake', val: '8 Dispatched' },
-            { label: 'OEM Margin Health', val: '+24.6%' }
-        ],
-        gatewayLabel: 'Supplier Gate'
-    },
-    admin: {
-        title: 'Global Operations Console',
-        subtitle: 'Infrastructure Moderation & System Ledger',
-        icon: ShieldAlert,
-        themeColor: 'text-purple-500 bg-purple-50 dark:bg-purple-950/50 border-purple-500/20',
-        ctaColor: 'bg-purple-900 hover:bg-purple-950 shadow-purple-500/20 hover:shadow-purple-500/40 focus:ring-purple-500/50',
-        glowColor: 'bg-purple-500/10 dark:bg-purple-500/5',
-        badge: 'Global Administration',
-        email: 'admin@solarlink.io',
-        cardBg: 'from-purple-500/10 via-fuchsia-500/5 to-purple-600/10',
-        illustrationTitle: 'Administration command console',
-        illustrationDesc: 'Moderate incoming OEM supplier listings, verify licensed engineers, and edit platform ledger transaction limits.',
-        features: [
-            { label: 'Active Regional Arrays', val: '1.2k Systems' },
-            { label: 'Moderation Applications', val: '3 Pending' },
-            { label: 'Ledger Audit Status', val: 'Synchronized' }
-        ],
-        gatewayLabel: 'Admin Terminal'
-    }
+const portals = [
+    { key: 'customer', label: 'Homeowner', icon: House },
+    { key: 'technician', label: 'Technician', icon: Wrench },
+    { key: 'vendor', label: 'Supplier', icon: Store },
+    { key: 'admin', label: 'Admin', icon: ShieldCheck },
+] as const
+
+const roleRoutes: Record<Role, string> = {
+    customer: 'user.login',
+    technician: 'technician.login',
+    vendor: 'vendor.login',
+    admin: 'admin.login',
 }
 
-// Active portal resolved based on prop passed from controller
-const activeRole = computed<'customer' | 'technician' | 'vendor' | 'admin'>(() => {
-    return props.role || 'customer'
-})
+const registerRoutes: Partial<Record<Role, string>> = {
+    customer: 'user.register',
+    technician: 'technician.register',
+    vendor: 'vendor.register',
+}
 
-const activeConfig = computed(() => roleConfigs[activeRole.value])
+const activeRole = ref<Role>(props.role ?? 'customer')
+const activePortal = computed(() => portals.find((portal) => portal.key === activeRole.value) ?? portals[0])
+const registrationRoute = computed(() => registerRoutes[activeRole.value])
+const demoAccounts = computed(() => props.demoAccounts ?? [])
+const showPassword = ref(false)
 
-// Dev-only auto-fill — hidden in production builds
-const isDev = import.meta.env.DEV
-
-// Inertia useForm — starts empty for security; demo pre-fill is opt-in via button
 const form = useForm({
     email: '',
     password: '',
@@ -114,255 +65,222 @@ const form = useForm({
     remember: false,
 })
 
-const showPassword = ref(false)
-const isPrefilled = ref(false)
-const triggerAutofill = () => {
-    form.email = activeConfig.value.email
-    form.password = 'password'
-    isPrefilled.value = true
-    setTimeout(() => {
-        isPrefilled.value = false
-    }, 1000)
-}
-
-// Watch activeRole to keep form.role in sync (credentials are NOT auto-filled)
-watch(activeRole, (newRole) => {
-    form.role = newRole
+watch(() => props.role, (role) => {
+    if (role) activeRole.value = role
 })
 
-const handleLoginSubmit = () => {
+watch(activeRole, (role) => {
+    form.role = role
+})
+
+const fillDemoAccount = (account: DemoAccount) => {
+    activeRole.value = account.role
+    form.email = account.email
+    form.password = 'password'
+}
+
+const submit = () => {
     form.role = activeRole.value
     form.post('/login')
 }
 </script>
 
 <template>
-    <Head :title="`SolarLink — ${activeConfig.title}`" />
+    <Head :title="`Sign in · SolarLink`" />
 
-    <div class="relative flex min-h-dvh items-start md:items-center justify-center px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10 bg-slate-50 dark:bg-solar-bg-dark transition-colors duration-300 overflow-x-hidden overflow-y-auto">
-        <!-- Background decorative glows tailored to active role -->
-        <div 
-            class="absolute top-10 left-10 w-96 h-96 rounded-full blur-3xl pointer-events-none -z-10 animate-pulse-slow transition-all duration-700"
-            :class="activeRole === 'customer' ? 'bg-solar-primary/10' : activeRole === 'technician' ? 'bg-emerald-500/10' : activeRole === 'vendor' ? 'bg-indigo-500/10' : 'bg-purple-500/10'"
-        ></div>
-        <div 
-            class="absolute bottom-10 right-10 w-[450px] h-[450px] rounded-full blur-3xl pointer-events-none -z-10 transition-all duration-700"
-            :class="activeRole === 'customer' ? 'bg-solar-primary-accent/10' : activeRole === 'technician' ? 'bg-teal-500/10' : activeRole === 'vendor' ? 'bg-blue-500/10' : 'bg-fuchsia-500/10'"
-        ></div>
+    <main class="min-h-dvh bg-[#f4f7fc] text-[#17243a] dark:bg-[#101a2c] dark:text-[#edf3ff] lg:grid lg:grid-cols-[minmax(0,0.92fr)_minmax(520px,1.08fr)]">
+        <section class="relative isolate flex min-h-[290px] flex-col justify-between overflow-hidden bg-[#17355d] px-6 py-6 text-white sm:min-h-[340px] sm:px-10 sm:py-8 lg:min-h-dvh lg:px-12 lg:py-10 xl:px-16">
+            <img
+                src="https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&w=1800&q=85"
+                alt="Rows of solar panels collecting sunlight"
+                class="absolute inset-0 -z-20 h-full w-full object-cover object-center"
+            />
+            <div class="absolute inset-0 -z-10 bg-gradient-to-t from-[#0b1c35]/95 via-[#14345d]/45 to-[#14345d]/15"></div>
 
-        <!-- Floating theme switch -->
-        <button 
-            @click="toggleDarkMode" 
-            class="absolute top-6 right-6 p-3 rounded-xl bg-white/70 dark:bg-solar-primary-dark/40 border border-slate-200 dark:border-white/5 text-solar-primary dark:text-solar-primary-accent shadow-solar hover:scale-105 transition-all"
-        >
-            <Sun v-if="isDark" class="h-5 w-5" />
-            <Moon v-else class="h-5 w-5" />
-        </button>
+            <Link :href="route('home')" class="group flex w-fit items-center gap-3 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-300 text-[#14345d] shadow-lg shadow-black/10">
+                    <Sun class="h-6 w-6" aria-hidden="true" />
+                </span>
+                <span class="text-xl font-bold tracking-normal">SolarLink</span>
+            </Link>
 
-        <div class="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-8 items-stretch relative z-10">
-            
-            <!-- Left Info Panel (Branded visual panel tailored to role) -->
-            <div 
-                class="lg:col-span-5 flex flex-col justify-between gap-6 sm:gap-8 p-5 sm:p-8 rounded-2xl md:rounded-3xl glass-card text-left bg-gradient-to-br transition-all duration-700 min-h-[320px] sm:min-h-[380px] lg:min-h-[640px]"
-                :class="activeConfig.cardBg"
-            >
-                <div class="flex flex-col gap-6">
-                    <Link :href="route('home')" class="flex items-center gap-2 group self-start">
-                        <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-solar-primary to-solar-primary-accent flex items-center justify-center shadow-solar-glow group-hover:scale-105 transition-transform duration-300">
-                            <span class="text-white font-extrabold text-sm">SL</span>
-                        </div>
-                        <span class="font-extrabold text-xl tracking-tight bg-gradient-to-r from-solar-primary to-solar-primary-accent bg-clip-text text-transparent">SolarLink</span>
-                    </Link>
-
-                    <div class="flex flex-col gap-3">
-                        <div class="inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-colors duration-500" :class="activeConfig.themeColor">
-                            <Sparkles class="h-3 w-3" />
-                            <span>{{ activeConfig.badge }}</span>
-                        </div>
-                        <h2 class="text-2xl font-black text-slate-900 dark:text-white leading-tight tracking-tight">
-                            {{ activeConfig.illustrationTitle }}
-                        </h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                            {{ activeConfig.illustrationDesc }}
-                        </p>
-                    </div>
-
-                    <!-- Metrics / Simulation elements for high-fidelity look -->
-                    <div class="flex flex-col gap-3 mt-2 bg-white/40 dark:bg-solar-primary-dark/15 backdrop-blur-sm p-4 rounded-2xl border border-slate-100 dark:border-white/5">
-                        <div 
-                            v-for="feat in activeConfig.features" 
-                            :key="feat.label"
-                            class="flex justify-between items-center text-xs"
-                        >
-                            <span class="text-slate-400 dark:text-slate-500 font-semibold">{{ feat.label }}</span>
-                            <span class="font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[10px]">{{ feat.val }}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div>
-                    <p class="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-relaxed">
-                        Database Integration Active. <br>
-                        Authorized telemetry handshake enabled.
-                    </p>
+            <div class="max-w-xl pb-1 pt-12 sm:pb-4 lg:pb-8">
+                <p class="mb-4 flex items-center gap-2 text-xs font-semibold uppercase text-sky-200">
+                    <span class="h-px w-7 bg-sky-300"></span>
+                    Clean energy, connected
+                </p>
+                <h1 class="max-w-lg text-3xl font-semibold leading-tight sm:text-4xl lg:text-5xl">
+                    Energy work, connected.
+                </h1>
+                <p class="mt-4 max-w-md text-sm leading-6 text-white/80 sm:text-base sm:leading-7">
+                    One network for homeowners, field teams, and the people who keep solar moving.
+                </p>
+                <div class="mt-8 hidden items-center gap-3 text-xs font-medium text-white/75 sm:flex">
+                    <span>Homes</span><span class="h-1 w-1 rounded-full bg-sky-300"></span>
+                    <span>Service teams</span><span class="h-1 w-1 rounded-full bg-sky-300"></span>
+                    <span>Suppliers</span>
                 </div>
             </div>
 
-            <!-- Right Login Form Panel -->
-            <div class="lg:col-span-7 glass-card p-5 sm:p-8 flex flex-col justify-start lg:justify-center text-left relative overflow-hidden bg-white/70 dark:bg-solar-primary-dark/5 rounded-2xl md:rounded-3xl">
-                <!-- Login success simulated modal overlay -->
-                <div 
-                    v-if="form.processing"
-                    class="absolute inset-0 bg-white/95 dark:bg-solar-bg-dark/95 z-20 flex flex-col items-center justify-center gap-4 text-center p-6"
-                >
-                    <div class="h-14 w-14 rounded-full border-4 border-solar-primary border-t-transparent animate-spin"></div>
-                    <div>
-                        <h3 class="font-black text-xl text-slate-800 dark:text-white">Accessing Secure Gateway...</h3>
-                        <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-bold">Autoclearing credential tokens</p>
-                    </div>
+            <p class="hidden text-xs text-white/60 lg:block">A brighter grid starts with better connections.</p>
+        </section>
+
+        <section class="relative flex min-h-[calc(100dvh-290px)] flex-col justify-center px-6 py-10 sm:min-h-[calc(100dvh-340px)] sm:px-10 lg:min-h-dvh lg:px-14 xl:px-20">
+            <button
+                type="button"
+                @click="toggleDarkMode"
+                :aria-label="isDark ? 'Switch to light theme' : 'Switch to dark theme'"
+                class="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full text-[#52627a] transition hover:bg-black/5 hover:text-[#17243a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 dark:text-[#c1cde2] dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:outline-sky-300 sm:right-8 sm:top-8"
+            >
+                <Sun v-if="isDark" class="h-5 w-5" aria-hidden="true" />
+                <Moon v-else class="h-5 w-5" aria-hidden="true" />
+            </button>
+
+            <div class="mx-auto w-full max-w-[430px] animate-fade-in-up">
+                <div class="mb-8">
+                    <p class="text-xs font-bold uppercase text-blue-800 dark:text-sky-300">Your SolarLink account</p>
+                    <h2 class="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">Welcome back.</h2>
+                    <p class="mt-2 text-sm leading-6 text-[#66768f] dark:text-[#adbad1]">Sign in to continue to your workspace.</p>
                 </div>
 
-                <!-- Status message (e.g. after password reset) -->
-                <div v-if="status" class="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm font-semibold text-emerald-600 dark:text-emerald-400 text-center">
+                <div class="mb-7">
+                    <p class="mb-2.5 text-xs font-semibold text-[#52627a] dark:text-[#c1cde2]">Choose your workspace</p>
+                    <nav aria-label="Choose a sign-in portal" class="grid grid-cols-4 gap-2">
+                        <Link
+                            v-for="portal in portals"
+                            :key="portal.key"
+                            :href="route(roleRoutes[portal.key])"
+                            :aria-current="activeRole === portal.key ? 'page' : undefined"
+                            class="flex min-h-[72px] flex-col items-center justify-center gap-2 rounded-lg border px-1.5 py-2 text-center transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 dark:focus-visible:outline-sky-300"
+                            :class="activeRole === portal.key ? 'border-blue-700 bg-blue-50 text-blue-950 dark:border-sky-300 dark:bg-blue-950/40 dark:text-white' : 'border-[#dfe7f2] bg-white/70 text-[#66768f] hover:border-[#aebcd3] hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-[#adbad1] dark:hover:bg-white/[0.07]'"
+                        >
+                            <component :is="portal.icon" class="h-4 w-4" :class="activeRole === portal.key ? 'text-blue-800 dark:text-sky-300' : ''" aria-hidden="true" />
+                            <span class="text-[11px] font-semibold leading-none">{{ portal.label }}</span>
+                        </Link>
+                    </nav>
+                </div>
+
+                <div v-if="status" role="status" class="mb-5 border-l-2 border-blue-700 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-sky-300 dark:bg-blue-950/40 dark:text-blue-100">
                     {{ status }}
                 </div>
 
-                <div class="flex flex-col gap-2 mb-6">
-                    <h3 class="text-2xl font-black text-slate-900 dark:text-white leading-tight tracking-tight">{{ activeConfig.title }}</h3>
-                    <p class="text-xs text-slate-450 dark:text-slate-400 font-medium">{{ activeConfig.subtitle }}</p>
-                </div>
-
-                <!-- DEMO AUTOFILL WIDGET — Only visible in development mode -->
-                <div 
-                    v-if="isDev"
-                    @click="triggerAutofill"
-                    class="mb-6 p-4 rounded-2xl cursor-pointer border text-left bg-gradient-to-r transition-all duration-300 hover:scale-[1.01] relative overflow-hidden"
-                    :class="[
-                        isPrefilled 
-                            ? 'border-solar-success bg-solar-success/5 animate-pulse' 
-                            : 'bg-slate-50/50 hover:bg-slate-50 dark:bg-solar-primary-dark/20 dark:hover:bg-solar-primary-dark/30 border-slate-100 dark:border-white/5 shadow-sm'
-                    ]"
-                >
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <div class="p-2.5 rounded-xl transition-colors duration-500 border" :class="activeConfig.themeColor">
-                                <component :is="activeConfig.icon" class="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h4 class="font-extrabold text-xs text-slate-800 dark:text-white">Click to Pre-fill Demo Account</h4>
-                                <p class="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">{{ activeConfig.email }}</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span class="text-[9px] font-extrabold text-solar-primary uppercase tracking-wider mr-1">One-Click</span>
-                            <ChevronRight class="h-4 w-4 text-slate-400" />
-                        </div>
-                    </div>
-                </div>
-
-                <form @submit.prevent="handleLoginSubmit" class="flex flex-col gap-5">
-                    <div class="flex flex-col gap-1.5">
-                        <label class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sign-in Email</label>
-                        <input 
-                            v-model="form.email"
-                            type="email" 
-                            name="email"
+                <form @submit.prevent="submit" class="space-y-5">
+                    <div>
+                        <label for="email" class="mb-2 block text-sm font-semibold">Email address</label>
+                        <input
                             id="email"
+                            v-model="form.email"
+                            type="email"
+                            name="email"
                             autocomplete="username"
-                            required 
-                            placeholder="your@email.com"
-                            class="h-11 px-4 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-sm focus:outline-none focus:border-solar-primary transition-all duration-300 text-slate-700 dark:text-slate-200 font-semibold"
-                            :class="{'border-red-500 focus:border-red-500': form.errors.email}"
+                            required
+                            autofocus
+                            placeholder="you@example.com"
+                            :aria-invalid="Boolean(form.errors.email)"
+                            :aria-describedby="form.errors.email ? 'email-error' : undefined"
+                            class="h-12 w-full rounded-lg border border-[#d6e0ef] bg-white px-4 text-sm text-[#17243a] placeholder:text-[#8999b2] transition focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700/15 dark:border-white/15 dark:bg-white/[0.04] dark:text-white dark:placeholder:text-[#8797b0] dark:focus:border-sky-300 dark:focus:ring-sky-300/15"
+                            :class="{ 'border-red-600 focus:border-red-600 focus:ring-red-600/15 dark:border-red-400': form.errors.email }"
                         />
-                        <span v-if="form.errors.email" class="text-xs text-red-500 font-medium mt-0.5">{{ form.errors.email }}</span>
+                        <p v-if="form.errors.email" id="email-error" class="mt-2 text-sm text-red-700 dark:text-red-300">{{ form.errors.email }}</p>
                     </div>
 
-                    <div class="flex flex-col gap-1.5">
-                        <div class="flex justify-between items-center">
-                            <label class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Access Token / Password</label>
-                            <Link :href="route('password.request')" class="text-[10px] font-bold text-solar-primary cursor-pointer hover:underline uppercase tracking-wider">Forgot?</Link>
+                    <div>
+                        <div class="mb-2 flex items-center justify-between gap-4">
+                            <label for="password" class="text-sm font-semibold">Password</label>
+                            <Link
+                                v-if="canResetPassword"
+                                :href="route('password.request')"
+                                class="text-xs font-semibold text-blue-800 underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700 dark:text-sky-300 dark:focus-visible:outline-sky-300"
+                            >
+                                Forgot password?
+                            </Link>
                         </div>
                         <div class="relative">
-                            <input 
-                                v-model="form.password"
-                                :type="showPassword ? 'text' : 'password'" 
-                                name="password"
+                            <input
                                 id="password"
+                                v-model="form.password"
+                                :type="showPassword ? 'text' : 'password'"
+                                name="password"
                                 autocomplete="current-password"
-                                required 
-                                placeholder="password"
-                                class="w-full h-11 px-4 pr-12 rounded-xl bg-slate-50 dark:bg-solar-primary-dark/30 border border-slate-200 dark:border-white/5 text-sm focus:outline-none focus:border-solar-primary transition-all duration-300 text-slate-700 dark:text-slate-200 font-semibold"
-                                :class="{'border-red-500 focus:border-red-500': form.errors.password}"
+                                required
+                                placeholder="Enter your password"
+                                :aria-invalid="Boolean(form.errors.password)"
+                                :aria-describedby="form.errors.password ? 'password-error' : undefined"
+                                class="h-12 w-full rounded-lg border border-[#d6e0ef] bg-white px-4 pr-12 text-sm text-[#17243a] placeholder:text-[#8999b2] transition focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700/15 dark:border-white/15 dark:bg-white/[0.04] dark:text-white dark:placeholder:text-[#8797b0] dark:focus:border-sky-300 dark:focus:ring-sky-300/15"
+                                :class="{ 'border-red-600 focus:border-red-600 focus:ring-red-600/15 dark:border-red-400': form.errors.password }"
                             />
-                            <button 
+                            <button
                                 type="button"
                                 @click="showPassword = !showPassword"
-                                class="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-solar-primary dark:hover:text-solar-primary-accent transition-colors duration-200 cursor-pointer"
-                                tabindex="-1"
+                                :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                                class="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-[#66768f] hover:text-[#17243a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700 dark:text-[#adbad1] dark:hover:text-white dark:focus-visible:outline-sky-300"
                             >
-                                <EyeOff v-if="showPassword" class="h-4.5 w-4.5" />
-                                <Eye v-else class="h-4.5 w-4.5" />
+                                <EyeOff v-if="showPassword" class="h-4 w-4" aria-hidden="true" />
+                                <Eye v-else class="h-4 w-4" aria-hidden="true" />
                             </button>
                         </div>
-                        <span v-if="form.errors.password" class="text-xs text-red-500 font-medium mt-0.5">{{ form.errors.password }}</span>
+                        <p v-if="form.errors.password" id="password-error" class="mt-2 text-sm text-red-700 dark:text-red-300">{{ form.errors.password }}</p>
                     </div>
 
-                    <!-- Remember me / login trigger -->
-                    <div class="flex items-center justify-between mt-1">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input 
-                                v-model="form.remember"
-                                type="checkbox"
-                                class="h-4.5 w-4.5 rounded border-slate-300 text-solar-primary focus:ring-solar-primary dark:bg-solar-primary-dark/30 dark:border-white/5"
-                            />
-                            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Remember Me</span>
-                        </label>
-                    </div>
+                    <label class="flex w-fit cursor-pointer items-center gap-2.5 text-sm text-[#52627a] dark:text-[#c1cde2]">
+                        <input
+                            v-model="form.remember"
+                            type="checkbox"
+                            name="remember"
+                            class="h-4 w-4 rounded border-[#bac8dd] text-blue-800 focus:ring-blue-700 dark:border-white/30 dark:bg-white/5 dark:text-sky-400 dark:focus:ring-sky-300"
+                        />
+                        Keep me signed in
+                    </label>
 
-                    <button 
-                        type="submit" 
-                        class="h-12 w-full rounded-xl text-white font-extrabold text-sm flex items-center justify-center gap-2 transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-solar-bg-dark btn-glow cursor-pointer"
-                        :class="activeConfig.ctaColor"
+                    <button
+                        type="submit"
+                        :disabled="form.processing"
+                        class="flex h-12 w-full items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-65 dark:focus-visible:ring-offset-[#101a2c]"
+                        :class="'bg-blue-800 hover:bg-blue-900 focus-visible:ring-blue-700 dark:bg-sky-300 dark:text-[#14345d] dark:hover:bg-sky-200 dark:focus-visible:ring-sky-300'"
                     >
-                        <span>Authorize Secure Session</span>
-                        <ArrowRight class="h-4 w-4" />
+                        <LoaderCircle v-if="form.processing" class="h-4 w-4 animate-spin" aria-hidden="true" />
+                        <span>{{ form.processing ? 'Signing in…' : `Continue as ${activePortal.label.toLowerCase()}` }}</span>
+                        <ArrowRight v-if="!form.processing" class="h-4 w-4" aria-hidden="true" />
                     </button>
                 </form>
 
-                <div v-if="activeRole !== 'admin'" class="text-center mt-6">
-                    <p class="text-xs text-slate-400 dark:text-slate-500">
-                        Don't have an account yet? 
-                        <Link :href="activeRole === 'customer' ? route('user.register') : activeRole === 'technician' ? route('technician.register') : route('vendor.register')" class="font-bold text-solar-primary hover:underline">Register Account</Link>
-                    </p>
-                </div>
-
-                <!-- SYSTEM GATEWAYS SELECTION (Direct custom links to every portal as requested) -->
-                <div class="mt-8 pt-6 border-t border-slate-100 dark:border-white/5">
-                    <h4 class="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest text-center mb-3">
-                        Alternate Portals & Gateways
-                    </h4>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <Link 
-                            v-for="(conf, roleKey) in roleConfigs"
-                            :key="roleKey"
-                            :href="roleKey === 'customer' ? route('user.login') : roleKey === 'technician' ? route('technician.login') : roleKey === 'vendor' ? route('vendor.login') : '/admin/login'"
-                            class="p-2.5 rounded-xl border text-center transition-all duration-300 flex flex-col items-center justify-center gap-1 group shadow-sm bg-white/40 hover:bg-white dark:bg-solar-primary-dark/10 dark:hover:bg-solar-primary-dark/30"
-                            :class="[
-                                activeRole === roleKey 
-                                    ? 'border-solar-primary/30 dark:border-white/20 ring-1 ring-solar-primary/20' 
-                                    : 'border-slate-100 dark:border-white/5 hover:scale-[1.03]'
-                            ]"
+                <div v-if="demoAccounts.length" class="mt-6 border-t border-[#dfe7f2] pt-4 dark:border-white/10">
+                    <div class="flex items-baseline justify-between gap-3">
+                        <h3 class="text-sm font-semibold">Demo logins</h3>
+                        <p class="text-xs text-[#66768f] dark:text-[#adbad1]">Password: <span class="font-mono font-semibold">password</span></p>
+                    </div>
+                    <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                        <button
+                            v-for="account in demoAccounts"
+                            :key="account.email"
+                            type="button"
+                            @click="fillDemoAccount(account)"
+                            :aria-label="`Use demo login for ${account.name}, ${account.role}`"
+                            :aria-pressed="activeRole === account.role && form.email === account.email && form.password === 'password'"
+                            class="flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 dark:focus-visible:outline-sky-300"
+                            :class="activeRole === account.role && form.email === account.email ? 'border-blue-700 bg-blue-50 dark:border-sky-300 dark:bg-blue-950/40' : 'border-[#dfe7f2] bg-white/70 hover:border-[#aebcd3] hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.07]'"
                         >
-                            <component :is="conf.icon" class="h-4 w-4 text-slate-400 group-hover:text-solar-primary transition-colors" />
-                            <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">
-                                {{ conf.gatewayLabel }}
+                            <span class="min-w-0">
+                                <span class="flex items-center gap-1.5">
+                                    <span class="truncate text-xs font-semibold">{{ account.name }}</span>
+                                    <span class="shrink-0 text-[9px] font-semibold uppercase text-blue-800 dark:text-sky-300">{{ account.role }}</span>
+                                </span>
+                                <span class="mt-0.5 block truncate text-[10px] text-[#66768f] dark:text-[#adbad1]">{{ account.email }}</span>
                             </span>
-                        </Link>
+                            <ArrowRight class="h-4 w-4 shrink-0 text-blue-800 dark:text-sky-300" aria-hidden="true" />
+                        </button>
                     </div>
                 </div>
 
-            </div>
+                <p v-if="registrationRoute" class="mt-7 border-t border-[#dfe7f2] pt-6 text-center text-sm text-[#66768f] dark:border-white/10 dark:text-[#adbad1]">
+                    New to SolarLink?
+                    <Link :href="route(registrationRoute)" class="ml-1 font-semibold text-blue-800 underline-offset-4 hover:underline dark:text-sky-300">
+                        Create an account
+                    </Link>
+                </p>
 
-        </div>
-    </div>
+                <p class="mt-8 text-center text-xs text-[#8999b2] dark:text-[#8797b0]">Secure access for the SolarLink network</p>
+            </div>
+        </section>
+    </main>
 </template>

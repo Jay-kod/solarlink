@@ -19,8 +19,12 @@ class TechnicianProfile extends Model
         'skills',
         'status',
         'approval_status',
+        'verification_status',
         'lat',
         'lng',
+        'latitude',
+        'longitude',
+        'service_radius',
         'eta',
         'experience',
         'hourly_rate',
@@ -29,6 +33,10 @@ class TechnicianProfile extends Model
 
     protected $casts = [
         'skills' => 'json',
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'service_radius' => 'float',
+        'rating' => 'float',
     ];
 
     public function user()
@@ -39,5 +47,25 @@ class TechnicianProfile extends Model
     public function maintenanceRequests()
     {
         return $this->hasMany(MaintenanceRequest::class);
+    }
+
+    public function getLatAttribute(): ?float
+    {
+        return $this->latitude;
+    }
+
+    public function setLatAttribute($value): void
+    {
+        $this->attributes['latitude'] = $value;
+    }
+
+    public function getLngAttribute(): ?float
+    {
+        return $this->longitude;
+    }
+
+    public function setLngAttribute($value): void
+    {
+        $this->attributes['longitude'] = $value;
     }
 }

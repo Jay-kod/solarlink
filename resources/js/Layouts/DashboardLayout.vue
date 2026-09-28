@@ -9,7 +9,7 @@ import {
     UserCheck, Wrench, Store, ShieldAlert,
     Cpu, Zap, Calendar, DollarSign, ShoppingBag, FolderKanban, 
     MessageSquare, FileText, ClipboardList, CheckCircle2,
-    AlertTriangle, AlertCircle, Info, ExternalLink, Shield, Heart
+    AlertTriangle, AlertCircle, Info, ExternalLink, Shield, Heart, MapPin
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -66,6 +66,7 @@ const roleMenuConfigs = {
             { name: 'Shopping Cart', href: '/user/cart', icon: ShoppingBag, badge: 'cartCount' },
             { name: 'My Wishlist', href: '/user/wishlist', icon: Heart, badge: 'wishlistCount' },
             { name: 'Service Chat', href: '/user/chat', icon: MessageSquare },
+            { name: 'Locations', href: '/locations', icon: MapPin },
             { name: 'Billing & Payments', href: '/user/payments', icon: DollarSign },
             { name: 'Account Settings', href: '/user/settings', icon: Settings }
         ],
@@ -82,7 +83,8 @@ const roleMenuConfigs = {
             { name: 'Incoming & Active Jobs', href: '/technician/jobs', icon: ClipboardList },
             { name: 'Calendar Scheduling', href: '/technician/calendar', icon: Calendar },
             { name: 'Revenue & Payouts', href: '/technician/earnings', icon: DollarSign },
-            { name: 'Service Chat', href: '/technician/chat', icon: MessageSquare }
+            { name: 'Service Chat', href: '/technician/chat', icon: MessageSquare },
+            { name: 'Locations', href: '/locations', icon: MapPin },
         ],
         profileName: 'Marcus Vance',
         profileRole: 'NABCEP Engineer',
@@ -97,7 +99,8 @@ const roleMenuConfigs = {
             { name: 'Dispatched Orders', href: '/vendor/orders', icon: FolderKanban },
             { name: 'Procurement RFQs', href: '/vendor/rfqs', icon: ClipboardList },
             { name: 'Store Branding', href: '/vendor/store', icon: Settings },
-            { name: 'Service Chat', href: '/vendor/chat', icon: MessageSquare }
+            { name: 'Service Chat', href: '/vendor/chat', icon: MessageSquare },
+            { name: 'Locations', href: '/locations', icon: MapPin },
         ],
         profileName: 'SolarLink Direct',
         profileRole: 'OEM Supplier',
@@ -114,7 +117,8 @@ const roleMenuConfigs = {
             { name: 'Vendor Moderation', href: '/admin/vendors', icon: Store },
             { name: 'Parts Approvals', href: '/admin/products', icon: ShoppingBag },
             { name: 'Blog CMS Edit', href: '/admin/blog', icon: FileText },
-            { name: 'System Settings', href: '/admin/settings', icon: Settings }
+            { name: 'System Settings', href: '/admin/settings', icon: Settings },
+            { name: 'Location Map', href: '/admin/locations', icon: MapPin },
         ],
         profileName: 'Admin Director',
         profileRole: 'Global Superuser',

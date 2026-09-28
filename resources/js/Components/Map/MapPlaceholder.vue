@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 export interface MapTechnician {
     id: string;
@@ -20,6 +22,7 @@ export interface MapTechnician {
 
 const props = defineProps<{
     technicians: MapTechnician[];
+    center: { lat: number; lng: number };
 }>()
 
 const emit = defineEmits<{
@@ -27,78 +30,70 @@ const emit = defineEmits<{
 }>()
 
 const selectedTech = ref<MapTechnician | null>(null)
-
-watch(
-    () => props.technicians,
-    (next) => {
-        selectedTech.value = next.length ? next[0] : null
-        if (next.length) {
-            emit('select-tech', next[0])
-        }
-    },
-    { immediate: true }
-)
-
-const bounds = computed(() => {
-    if (!props.technicians.length) {
-        return { minLat: 0, maxLat: 1, minLng: 0, maxLng: 1 }
-    }
-    const lats = props.technicians.map((t) => t.lat)
-    const lngs = props.technicians.map((t) => t.lng)
-    return {
-        minLat: Math.min(...lats),
-        maxLat: Math.max(...lats),
-        minLng: Math.min(...lngs),
-        maxLng: Math.max(...lngs),
-    }
-})
-
-const pinStyle = (tech: MapTechnician) => {
-    const latRange = bounds.value.maxLat - bounds.value.minLat || 1
-    const lngRange = bounds.value.maxLng - bounds.value.minLng || 1
-
-    const x = ((tech.lng - bounds.value.minLng) / lngRange) * 80 + 10
-    const y = ((bounds.value.maxLat - tech.lat) / latRange) * 70 + 10
-
-    return {
-        left: `${x}%`,
-        top: `${y}%`,
-    }
-}
+const mapElement = ref<HTMLDivElement | null>(null)
+let map: L.Map | null = null
+let technicianMarkers: L.Marker[] = []
 
 const selectMarker = (tech: MapTechnician) => {
     selectedTech.value = tech
+    map?.panTo([tech.lat, tech.lng])
     emit('select-tech', tech)
 }
+
+const renderTechnicians = () => {
+    if (!map) return
+    technicianMarkers.forEach((marker) => marker.remove())
+    technicianMarkers = props.technicians.map((tech) => L.marker([tech.lat, tech.lng], {
+        title: `${tech.name} · ${tech.distance} away`,
+        icon: L.divIcon({
+            className: 'dispatch-marker-wrapper',
+            html: `<span class="dispatch-marker ${tech.status === 'online' ? 'dispatch-marker-online' : 'dispatch-marker-offline'}"></span>`,
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+        }),
+    }).addTo(map!).on('click', () => selectMarker(tech)))
+
+    if (props.technicians.length) {
+        const points: L.LatLngExpression[] = [
+            [props.center.lat, props.center.lng],
+            ...props.technicians.map((tech) => [tech.lat, tech.lng] as L.LatLngExpression),
+        ]
+        map.fitBounds(L.latLngBounds(points).pad(0.18), { maxZoom: 13 })
+        const selected = props.technicians.find((tech) => tech.id === selectedTech.value?.id) ?? props.technicians[0]
+        if (selected && selectedTech.value?.id !== selected.id) selectMarker(selected)
+    } else {
+        selectedTech.value = null
+        map.setView([props.center.lat, props.center.lng], 12)
+    }
+}
+
+watch(() => props.technicians, renderTechnicians, { deep: true })
+watch(() => props.center, (center) => {
+    if (!map || props.technicians.length) return
+    map.setView([center.lat, center.lng], 12)
+}, { deep: true })
+
+onMounted(() => {
+    if (!mapElement.value) return
+    map = L.map(mapElement.value, { scrollWheelZoom: true }).setView([props.center.lat, props.center.lng], 12)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+    }).addTo(map)
+    renderTechnicians()
+    window.setTimeout(() => map?.invalidateSize(), 0)
+})
+
+onBeforeUnmount(() => {
+    technicianMarkers.forEach((marker) => marker.remove())
+    map?.remove()
+    map = null
+})
 </script>
 
 <template>
-    <div class="relative w-full h-[540px] rounded-2xl overflow-hidden border border-solar-primary/10 bg-slate-100 dark:bg-solar-primary-dark/20">
-        <div class="absolute inset-0 bg-[radial-gradient(circle_at_25%_25%,rgba(34,197,94,0.12),transparent_45%),radial-gradient(circle_at_75%_75%,rgba(14,165,233,0.15),transparent_45%)]"></div>
-        <div class="absolute inset-0">
-            <div class="absolute inset-0 grid grid-cols-6 grid-rows-6 opacity-25">
-                <div v-for="n in 36" :key="n" class="border border-white/60"></div>
-            </div>
-        </div>
-
-        <div
-            v-for="tech in technicians"
-            :key="tech.id"
-            class="absolute -translate-x-1/2 -translate-y-1/2"
-            :style="pinStyle(tech)"
-        >
-            <button @click="selectMarker(tech)" class="relative">
-                <span
-                    class="block h-10 w-10 rounded-full border-2 overflow-hidden bg-white"
-                    :class="selectedTech?.id === tech.id ? 'border-solar-primary ring-4 ring-solar-primary/25' : 'border-white'"
-                >
-                    <img v-if="tech.avatar" :src="tech.avatar" :alt="tech.name" class="h-full w-full object-cover" />
-                    <span v-else class="h-full w-full flex items-center justify-center text-xs font-bold text-slate-600">{{ tech.name.charAt(0) }}</span>
-                </span>
-                <span class="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border border-white" :class="tech.status === 'online' ? 'bg-emerald-500' : 'bg-amber-500'"></span>
-            </button>
-        </div>
-
+    <div class="relative w-full overflow-hidden rounded-2xl border border-solar-primary/10">
+        <div ref="mapElement" class="h-[540px] w-full" aria-label="Technician dispatch map"></div>
         <div v-if="selectedTech" class="absolute left-4 right-4 bottom-4 rounded-xl bg-white/95 dark:bg-slate-900/90 p-4 border border-solar-primary/20">
             <p class="font-bold text-sm">{{ selectedTech.name }}</p>
             <p class="text-xs text-slate-500 mt-1">
@@ -108,3 +103,27 @@ const selectMarker = (tech: MapTechnician) => {
         </div>
     </div>
 </template>
+
+<style>
+.dispatch-marker-wrapper {
+    background: transparent;
+    border: 0;
+}
+
+.dispatch-marker {
+    display: block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #fff;
+    border-radius: 9999px;
+    box-shadow: 0 1px 5px rgb(15 23 42 / 45%);
+}
+
+.dispatch-marker-online {
+    background: #0284c7;
+}
+
+.dispatch-marker-offline {
+    background: #d97706;
+}
+</style>
